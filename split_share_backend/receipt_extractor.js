@@ -1,17 +1,16 @@
-import OpenAI from "openai";
-import { z } from "zod";
-import { zodResponseFormat } from "openai/helpers/zod";
+import OpenAI from 'openai';
+import { z } from 'zod';
+import { zodResponseFormat } from 'openai/helpers/zod';
 
 const openai = new OpenAI({
-  baseURL: "http://localhost:11434/v1",
-  apiKey: "ollama", // required but unused
+  baseURL: 'http://localhost:11434/v1',
+  apiKey: 'ollama', // required but unused
 });
 
 const ReceiptItem = z.object({
   description: z.string(),
   quantity: z.number(),
   unit_price: z.number(),
-  total: z.number(),
 });
 
 const ReceiptExtraction = z.object({
@@ -25,20 +24,25 @@ const ReceiptExtraction = z.object({
 
 async function extractReceiptInfo(text) {
   const completion = await openai.chat.completions.create({
-    model: "llama3.2:3b",
+    model: 'custom:latest',
     messages: [
       {
-        role: "system",
-        content: `You are an expert at extracting structured information from receipt images. Extract all relevant details including date, items, prices, and totals.
-          `,
+        role: 'system',
+        content: `You are an AI assistant that extracts structured data from receipt text. 
+                Your task is to analyze the given OCR text and extract key receipt details in a structured JSON format. 
+                ### **Guidelines**: - **Vendor Information**: Extract store (merchant) name, address, and phone number. - **Receipt Details**: Extract the receipt number, date (YYYY-MM-DD format), 
+                and time (HH:MM format). - **Financial Data**: Extract 'total_amount', 'subtotal', 'tax', 'discount', and 'tip'. 
+                - **Items List**: Identify purchased items, their quantity, unit price, and total price. 
+                - **Other Details**: Extract store ID and cashier's name if available. Quantity should be 1 by default - 
+                **Ensure Accuracy**: Only include fields found in the OCR text. If a value is missing, exclude the field instead of guessing. ### **Example Input (OCR Text)**:`,
       },
       {
-        role: "user",
-        content: `Please extract the information from this receipt image in Json format. Here is the text : ${text}`,
+        role: 'user',
+        content: `convert this into json format : ${text}`,
       },
     ],
-    temperature: 1,
-    response_format: zodResponseFormat(ReceiptExtraction, "receipt_extraction"),
+    temperature: 0.25,
+    response_format: zodResponseFormat(ReceiptExtraction, 'receipt_extraction'),
   });
 
   console.log(completion.choices[0].message.content);
