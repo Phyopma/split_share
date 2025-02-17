@@ -1,6 +1,8 @@
-import { processReceiptWithOCR } from './receipt_ocr_processor.js';
+import { processReceiptWithOCR } from "./receipt_ocr_processor.js";
 
-var img_path = './public/3.jpg';
+var img_path = "./public/image.png";
+
+// Load the TensorFlow.js model
 
 async function main() {
   try {
@@ -9,7 +11,7 @@ async function main() {
     console.log(result.ocr_text);
     console.log(JSON.stringify(result.structured_data));
   } catch (error) {
-    console.error('Error:', error);
+    console.error("Error:", error);
   }
 }
 
