@@ -1,3 +1,10 @@
 transformers
 pytorch-lightning
 donut-python
+easyocr
+opencv-python
+layoutparser[layoutmodels] 
+numpy
+torch 
+torchvision
+pytesseract

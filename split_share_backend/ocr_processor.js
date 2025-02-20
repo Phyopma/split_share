@@ -8,21 +8,11 @@ async function preprocessImage(imagePath) {
       .grayscale() // Convert to grayscale
       .normalize() // Initial normalization
       .gamma(1.2) // Apply gamma correction to enhance low-intensity details
-      .median(5) // Increased median filter size for better noise reduction
       .modulate({
         brightness: 1.2, // Increase brightness more for faded text
         saturation: 0.7, // Further reduce saturation
         contrast: 1.3, // Boost contrast
       })
-      .sharpen({
-        sigma: 2.0, // Increased sigma for stronger sharpening
-        m1: 2.0,
-        m2: 0.5,
-        x1: 3,
-        y2: 15,
-        y3: 25,
-      })
-      .threshold(128) // Apply binary thresholding with fixed threshold
       .normalize() // Final normalization
       .resize(2000, null, {
         withoutEnlargement: true,
@@ -46,9 +36,7 @@ async function extractTextFromImage(imagePath) {
     await worker.initialize("eng");
 
     // Configure Tesseract parameters for receipt and invoice processing
-    await worker.setParameters({
-      tessedit_pageseg_mode: Tesseract.PSM.SINGLE_BLOCK, // Single block of text
-    });
+    await worker.setParameters({});
 
     // Preprocess the image before OCR
     const preprocessedImage = await preprocessImage(imagePath);

@@ -5,9 +5,9 @@ async function processReceiptWithOCR(imagePath) {
   try {
     // First step: Extract text from image using OCR
     const { text, confidence } = await extractTextFromImage(imagePath);
-    console.log(text);
+    console.log("OCR Text:", text);
     // Second step: Process the OCR result through our receipt extractor
-    // const extractedInfo = await extractReceiptInfo(text);
+    const extractedInfo = await extractReceiptInfo(text);
 
     return {
       ocr_text: text, // Raw OCR text for reference/debugging
@@ -21,3 +21,7 @@ async function processReceiptWithOCR(imagePath) {
 }
 
 export { processReceiptWithOCR };
+
+let image_path = "./public/2.jpg";
+const ocr_text = processReceiptWithOCR(image_path);
+console.log(ocr_text);

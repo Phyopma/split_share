@@ -70,7 +70,7 @@ def predict_image_class(image_path):
 if __name__ == "__main__":
     # Path to the test image
     # Replace with the path to your test image
-    image_path = "../public/4.jpg"
+    image_path = "../public/image1.png"
 
     # Predict the class of the image
     predicted_class, predicted_probability = predict_image_class(image_path)

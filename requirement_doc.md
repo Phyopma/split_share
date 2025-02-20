@@ -171,9 +171,9 @@ This document outlines the requirements, workflow, pipeline, and design architec
 
 ### 5.4 Data Layer
 - **Database**
-  - Relational database for structured data (users, receipts, bills, groups).
+  - **PostgreSQL** for structured data (users, receipts, bills, groups).
 - **Object/Blob Storage**
-  - Storage for image files.
+  - **AWS S3** for storing receipt images.
 - **Backup & Security**
   - Regular backups.
   - Encryption and access control to ensure data privacy.

@@ -1,31 +1,41 @@
 from PIL import Image
 import torch
 import re
+import sys
+import json
 from transformers import DonutProcessor, VisionEncoderDecoderModel
 
 # Step 1: Load the classification and parsing models
+
+
 def load_models():
     # Load RVLCDIP model for document classification
-    classifier_processor = DonutProcessor.from_pretrained("naver-clova-ix/donut-base-finetuned-rvlcdip")
-    classifier_model = VisionEncoderDecoderModel.from_pretrained("naver-clova-ix/donut-base-finetuned-rvlcdip")
-    
+    classifier_processor = DonutProcessor.from_pretrained(
+        "naver-clova-ix/donut-base-finetuned-rvlcdip")
+    classifier_model = VisionEncoderDecoderModel.from_pretrained(
+        "naver-clova-ix/donut-base-finetuned-rvlcdip")
+
     # Load CORD-v2 model for receipt parsing
-    parser_processor = DonutProcessor.from_pretrained("naver-clova-ix/donut-base-finetuned-cord-v2")
-    parser_model = VisionEncoderDecoderModel.from_pretrained("naver-clova-ix/donut-base-finetuned-cord-v2")
-    
+    parser_processor = DonutProcessor.from_pretrained(
+        "naver-clova-ix/donut-base-finetuned-cord-v2")
+    parser_model = VisionEncoderDecoderModel.from_pretrained(
+        "naver-clova-ix/donut-base-finetuned-cord-v2")
+
     device = "cuda" if torch.cuda.is_available() else "cpu"
-    
+
     # Move models to device and set to evaluation mode
     classifier_model.to(device).eval()
     parser_model.to(device).eval()
-    
+
     if torch.cuda.is_available():
         classifier_model.half()
         parser_model.half()
-    
+
     return classifier_processor, classifier_model, parser_processor, parser_model
 
 # Step 2: Classify and Parse the Document
+
+
 def process_document(image_path, classifier_processor, classifier_model, parser_processor, parser_model):
     # Load the image
     image = Image.open(image_path).convert("RGB")
@@ -34,8 +44,10 @@ def process_document(image_path, classifier_processor, classifier_model, parser_
     # Step 1: Document Classification
     # Prepare classification inputs
     classification_prompt = "<s_rvlcdip>"
-    classifier_input_ids = classifier_processor.tokenizer(classification_prompt, add_special_tokens=False, return_tensors="pt").input_ids
-    classifier_pixel_values = classifier_processor(image, return_tensors="pt").pixel_values
+    classifier_input_ids = classifier_processor.tokenizer(
+        classification_prompt, add_special_tokens=False, return_tensors="pt").input_ids
+    classifier_pixel_values = classifier_processor(
+        image, return_tensors="pt").pixel_values
 
     # Move tensors to device
     classifier_pixel_values = classifier_pixel_values.to(device)
@@ -55,18 +67,22 @@ def process_document(image_path, classifier_processor, classifier_model, parser_
         )
 
     # Process classification results
-    class_sequence = classifier_processor.batch_decode(classifier_outputs.sequences)[0]
-    class_sequence = class_sequence.replace(classifier_processor.tokenizer.eos_token, "").replace(classifier_processor.tokenizer.pad_token, "")
+    class_sequence = classifier_processor.batch_decode(
+        classifier_outputs.sequences)[0]
+    class_sequence = class_sequence.replace(classifier_processor.tokenizer.eos_token, "").replace(
+        classifier_processor.tokenizer.pad_token, "")
     class_sequence = re.sub(r"<.*?>", "", class_sequence, count=1).strip()
     class_name = classifier_processor.token2json(class_sequence)["class"]
-    
+
     # Check if the document is a receipt
     if "receipt" in class_sequence.lower() or "invoice" in class_sequence.lower():
         # Step 2: Receipt Parsing
         # Prepare parsing inputs
         parsing_prompt = "<s_cord-v2>"
-        parser_input_ids = parser_processor.tokenizer(parsing_prompt, add_special_tokens=False, return_tensors="pt").input_ids
-        parser_pixel_values = parser_processor(image, return_tensors="pt").pixel_values
+        parser_input_ids = parser_processor.tokenizer(
+            parsing_prompt, add_special_tokens=False, return_tensors="pt").input_ids
+        parser_pixel_values = parser_processor(
+            image, return_tensors="pt").pixel_values
 
         # Move tensors to device
         parser_pixel_values = parser_pixel_values.to(device)
@@ -86,8 +102,10 @@ def process_document(image_path, classifier_processor, classifier_model, parser_
             )
 
         # Process parsing results
-        parse_sequence = parser_processor.batch_decode(parser_outputs.sequences)[0]
-        parse_sequence = parse_sequence.replace(parser_processor.tokenizer.eos_token, "").replace(parser_processor.tokenizer.pad_token, "")
+        parse_sequence = parser_processor.batch_decode(
+            parser_outputs.sequences)[0]
+        parse_sequence = parse_sequence.replace(parser_processor.tokenizer.eos_token, "").replace(
+            parser_processor.tokenizer.pad_token, "")
         parse_sequence = re.sub(r"<.*?>", "", parse_sequence, count=1).strip()
         parsed_data = parser_processor.token2json(parse_sequence)
 
@@ -104,16 +122,28 @@ def process_document(image_path, classifier_processor, classifier_model, parser_
         }
 
 # Step 3: Main Function
+
+
 def main():
+    # Check if image path is provided as argument
+    if len(sys.argv) < 2:
+        print(json.dumps({
+            "error": "No image path provided"
+        }))
+        sys.exit(1)
+
+    image_path = sys.argv[1]
+
     # Load both classification and parsing models
     classifier_processor, classifier_model, parser_processor, parser_model = load_models()
 
-    # Path to the test image
-    image_path = "../public/3.png"  # Replace with the path to your test image
-
     # Process the image through the pipeline
-    result = process_document(image_path, classifier_processor, classifier_model, parser_processor, parser_model)
-    print(result)
+    result = process_document(image_path, classifier_processor,
+                              classifier_model, parser_processor, parser_model)
+
+    # Print result as JSON for the Node.js process to parse
+    print(json.dumps(result))
+
 
 # Run the script
 if __name__ == "__main__":
