@@ -1,6 +1,7 @@
 const fs = require("fs");
 const path = require("path");
 const axios = require("axios");
+const prisma = require("../prisma/dbClient");
 
 /**
  * Process a receipt image using Groq Vision API and return structured data
@@ -64,7 +65,7 @@ async function extractReceiptData(base64Image) {
             content: [
               {
                 type: "text",
-                text: "This is a receipt or invoice image. Extract the following information in a structured JSON format: merchantName, date, location, items (array with name, quantity, unitPrice, total for each item), subtotal, tax, tip (if available), and total. Make sure all values use proper numeric formats with decimals where applicable.",
+                text: "This is a receipt or invoice image. Extract the following information in a structured JSON format: merchantName, date, location, items (array with name, quantity, unitPrice, total for each item), subtotal, tax, tip (if available), and total. Make sure all values use proper numeric formats with decimals where applicable. For each item, use 'name' for the item description, not 'description'.",
               },
               {
                 type: "image_url",
@@ -110,4 +111,133 @@ async function extractReceiptData(base64Image) {
   }
 }
 
-module.exports = { processReceiptImage };
+/**
+ * Save receipt to database
+ */
+async function saveReceipt(req, res) {
+  try {
+    const userId = req.user.id;
+    const receiptData = req.body;
+
+    // Parse the date string to a JavaScript Date object
+    const receiptDate = new Date(receiptData.date);
+
+    // Create receipt with nested items and convert string values to float
+    const receipt = await prisma.receipt.create({
+      data: {
+        userId,
+        merchantName: receiptData.merchantName,
+        date: receiptDate,
+        subtotal: parseFloat(receiptData.subtotal),
+        tax: parseFloat(receiptData.tax),
+        tip: receiptData.tip ? parseFloat(receiptData.tip) : null,
+        total: parseFloat(receiptData.total),
+        items: {
+          create: receiptData.items.map((item) => ({
+            name: item.name,
+            quantity: parseFloat(item.quantity),
+            unitPrice: parseFloat(item.unitPrice),
+            total: parseFloat(item.total),
+          })),
+        },
+      },
+      include: {
+        items: true,
+      },
+    });
+
+    // Format the date for response
+    const formattedReceipt = {
+      ...receipt,
+      date: receipt.date.toISOString(),
+    };
+
+    res.status(201).json({
+      success: true,
+      data: formattedReceipt,
+    });
+  } catch (error) {
+    console.error("Error saving receipt:", error);
+    res.status(500).json({
+      success: false,
+      message: error.message || "Failed to save receipt",
+    });
+  }
+}
+
+/**
+ * Get all receipts for a user
+ */
+async function getUserReceipts(req, res) {
+  try {
+    const userId = req.user.id;
+
+    const receipts = await prisma.receipt.findMany({
+      where: { userId },
+      include: { items: true },
+      orderBy: { createdAt: "desc" },
+    });
+
+    // Format the dates for response
+    const formattedReceipts = receipts.map((receipt) => ({
+      ...receipt,
+      date: receipt.date.toISOString(),
+    }));
+
+    res.status(200).json({
+      success: true,
+      data: formattedReceipts,
+    });
+  } catch (error) {
+    console.error("Error getting receipts:", error);
+    res.status(500).json({
+      success: false,
+      message: error.message || "Failed to get receipts",
+    });
+  }
+}
+
+/**
+ * Delete a receipt
+ */
+async function deleteReceipt(req, res) {
+  try {
+    const { id } = req.params;
+    const userId = req.user.id;
+
+    // Check if receipt exists and belongs to user
+    const receipt = await prisma.receipt.findFirst({
+      where: { id, userId },
+    });
+
+    if (!receipt) {
+      return res.status(404).json({
+        success: false,
+        message: "Receipt not found or doesn't belong to you",
+      });
+    }
+
+    // Delete receipt (cascade will delete items because of the schema relationship)
+    await prisma.receipt.delete({
+      where: { id },
+    });
+
+    res.status(200).json({
+      success: true,
+      message: "Receipt deleted successfully",
+    });
+  } catch (error) {
+    console.error("Error deleting receipt:", error);
+    res.status(500).json({
+      success: false,
+      message: error.message || "Failed to delete receipt",
+    });
+  }
+}
+
+module.exports = {
+  processReceiptImage,
+  saveReceipt,
+  getUserReceipts,
+  deleteReceipt,
+};

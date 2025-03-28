@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import {
   View,
   StyleSheet,
@@ -9,17 +9,57 @@ import {
   TouchableOpacity,
   RefreshControl,
 } from "react-native";
-import { Button, Text, Card, FAB, Icon } from "@rneui/themed";
+import { Button, Text, Card, FAB, Icon, Header } from "@rneui/themed";
 import * as ImagePicker from "expo-image-picker";
 import * as FileSystem from "expo-file-system";
-
-// API configuration
-const API_BASE_URL = "http://localhost:3000"; // Change to your server address when deploying
+import { useAuth } from "../contexts/AuthContext";
+import { useReceipts } from "../contexts/ReceiptContext";
+import { API_BASE_URL } from "../config";
 
 export default function HomeScreen({ navigation }) {
-  const [receipts, setReceipts] = useState([]);
+  const { user, token, logout } = useAuth();
+  const {
+    receipts,
+    saveReceipt: saveReceiptToContext,
+    deleteReceipt: deleteReceiptFromContext,
+  } = useReceipts();
   const [loading, setLoading] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
+
+  // Set up the header with logout button
+  useEffect(() => {
+    navigation.setOptions({
+      headerRight: () => (
+        <TouchableOpacity style={styles.logoutButton} onPress={handleLogout}>
+          <Icon name="logout" type="material" color="#fff" size={24} />
+        </TouchableOpacity>
+      ),
+    });
+  }, [navigation]);
+
+  const handleLogout = async () => {
+    Alert.alert("Logout", "Are you sure you want to logout?", [
+      { text: "Cancel", style: "cancel" },
+      {
+        text: "Logout",
+        style: "destructive",
+        onPress: async () => {
+          try {
+            setLoading(true);
+            const result = await logout();
+            if (!result.success) {
+              Alert.alert("Error", result.message || "Failed to logout");
+            }
+          } catch (error) {
+            console.error("Logout error:", error);
+            Alert.alert("Error", "An unexpected error occurred during logout");
+          } finally {
+            setLoading(false);
+          }
+        },
+      },
+    ]);
+  };
 
   const onRefresh = React.useCallback(() => {
     setRefreshing(true);
@@ -96,12 +136,14 @@ export default function HomeScreen({ navigation }) {
     try {
       console.log(`Uploading image to ${API_BASE_URL}/api/receipts/upload`);
 
+      // Include the authentication token in the request headers
       const response = await fetch(`${API_BASE_URL}/api/receipts/upload`, {
         method: "POST",
         body: formData,
         headers: {
           Accept: "application/json",
           "Content-Type": "multipart/form-data",
+          Authorization: `Bearer ${token}`, // Add the auth token here
         },
       });
 
@@ -118,19 +160,23 @@ export default function HomeScreen({ navigation }) {
         const newReceipt = {
           id: Date.now().toString(),
           merchantName: responseData.data.merchantName || "Unknown Merchant",
-          date: responseData.data.date || new Date().toLocaleDateString(),
+          // Ensure date is properly formatted as string
+          date: responseData.data.date || new Date().toISOString(),
           items:
             responseData.data.items.map((item) => ({
               name: item.name || item.description || "Unknown Item",
-              quantity: item.quantity || "1",
-              unitPrice: item.unitPrice || "0.00",
-              total: item.total || "0.00",
+              quantity: parseFloat(item.quantity) || 1,
+              unitPrice: parseFloat(item.unitPrice) || 0.0,
+              total: parseFloat(item.total) || 0.0,
             })) || [],
-          subtotal: responseData.data.subtotal || "0.00",
-          tax: responseData.data.tax || "0.00",
-          tip: responseData.data.tip || "0.00",
-          total: responseData.data.total || "0.00",
+          subtotal: parseFloat(responseData.data.subtotal) || 0.0,
+          tax: parseFloat(responseData.data.tax) || 0.0,
+          tip: parseFloat(responseData.data.tip) || 0.0,
+          total: parseFloat(responseData.data.total) || 0.0,
         };
+
+        // Save receipt using context function
+        saveReceiptToContext(newReceipt);
 
         // Navigate to confirmation screen for user to verify data
         navigation.navigate("ReceiptConfirmation", { receipt: newReceipt });
@@ -146,16 +192,6 @@ export default function HomeScreen({ navigation }) {
     }
   };
 
-  const saveReceipt = (receipt) => {
-    setReceipts((prevReceipts) => [...prevReceipts, receipt]);
-  };
-
-  const deleteReceipt = (id) => {
-    setReceipts((prevReceipts) =>
-      prevReceipts.filter((receipt) => receipt.id !== id)
-    );
-  };
-
   const renderReceiptCard = (receipt, index) => (
     <Card key={index} containerStyle={styles.receiptCard}>
       <TouchableOpacity
@@ -163,8 +199,10 @@ export default function HomeScreen({ navigation }) {
         <Card.Title style={styles.cardTitle}>{receipt.merchantName}</Card.Title>
         <View style={styles.cardContent}>
           <View style={styles.cardDetails}>
-            <Text style={styles.dateText}>{receipt.date}</Text>
-            <Text style={styles.totalText}>${receipt.total}</Text>
+            <Text style={styles.dateText}>
+              {new Date(receipt.date).toLocaleDateString()}
+            </Text>
+            <Text style={styles.totalText}>${receipt.total.toFixed(2)}</Text>
           </View>
           <Icon name="chevron-right" type="material-community" color="#999" />
         </View>
@@ -205,7 +243,7 @@ export default function HomeScreen({ navigation }) {
                 {
                   text: "Delete",
                   style: "destructive",
-                  onPress: () => deleteReceipt(receipt.id),
+                  onPress: () => deleteReceiptFromContext(receipt.id),
                 },
               ]
             );
@@ -389,5 +427,9 @@ const styles = StyleSheet.create({
   },
   addFab: {
     marginBottom: 10,
+  },
+  logoutButton: {
+    marginRight: 10,
+    padding: 8,
   },
 });

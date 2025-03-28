@@ -16,34 +16,60 @@ export default function ReceiptConfirmationScreen({ route, navigation }) {
 
   const handleItemChange = (index, field, value) => {
     const updatedItems = [...receipt.items];
-    updatedItems[index] = { ...updatedItems[index], [field]: value };
+
+    if (field === "name") {
+      updatedItems[index] = { ...updatedItems[index], [field]: value };
+    } else {
+      // Convert to number for quantity, unitPrice and total
+      const numericValue = parseFloat(value) || 0;
+      updatedItems[index] = { ...updatedItems[index], [field]: numericValue };
+    }
 
     // Recalculate total if quantity or unitPrice changes
     if (field === "quantity" || field === "unitPrice") {
-      const qty = parseFloat(updatedItems[index].quantity) || 0;
-      const price = parseFloat(updatedItems[index].unitPrice) || 0;
-      updatedItems[index].total = (qty * price).toFixed(2);
+      const qty = updatedItems[index].quantity || 0;
+      const price = updatedItems[index].unitPrice || 0;
+      updatedItems[index].total = qty * price;
     }
 
     setReceipt({ ...receipt, items: updatedItems });
   };
 
   const handleGeneralChange = (field, value) => {
-    setReceipt({ ...receipt, [field]: value });
+    if (field === "merchantName" || field === "date") {
+      setReceipt({ ...receipt, [field]: value });
+    } else {
+      // For numeric fields like tax, tip, etc.
+      setReceipt({ ...receipt, [field]: parseFloat(value) || 0 });
+    }
+  };
+
+  const handleDateChange = (text) => {
+    try {
+      // Try to parse the date input
+      const newDate = new Date(text);
+      if (!isNaN(newDate.getTime())) {
+        setReceipt({ ...receipt, date: newDate.toISOString() });
+      }
+    } catch (error) {
+      console.error("Invalid date format:", error);
+      // Keep the existing date if parsing fails
+    }
   };
 
   const calculateSubtotal = () => {
-    const subtotal = receipt.items
-      .reduce((sum, item) => sum + parseFloat(item.total || 0), 0)
-      .toFixed(2);
+    const subtotal = receipt.items.reduce(
+      (sum, item) => sum + (item.total || 0),
+      0
+    );
     return subtotal;
   };
 
   const recalculateTotal = () => {
-    const subtotal = parseFloat(calculateSubtotal());
-    const tax = parseFloat(receipt.tax || 0);
-    const tip = parseFloat(receipt.tip || 0);
-    return (subtotal + tax + tip).toFixed(2);
+    const subtotal = calculateSubtotal();
+    const tax = receipt.tax || 0;
+    const tip = receipt.tip || 0;
+    return subtotal + tax + tip;
   };
 
   const updateTotals = () => {
@@ -124,12 +150,14 @@ export default function ReceiptConfirmationScreen({ route, navigation }) {
           {isEditing ? (
             <TextInput
               style={styles.editInput}
-              value={receipt.date}
-              onChangeText={(text) => handleGeneralChange("date", text)}
+              value={new Date(receipt.date).toLocaleDateString()}
+              onChangeText={handleDateChange}
               placeholder="Date (MM/DD/YYYY)"
             />
           ) : (
-            <Text style={styles.date}>{receipt.date}</Text>
+            <Text style={styles.date}>
+              {new Date(receipt.date).toLocaleDateString()}
+            </Text>
           )}
         </View>
 
@@ -185,7 +213,7 @@ export default function ReceiptConfirmationScreen({ route, navigation }) {
                     keyboardType="numeric"
                     placeholder="Price"
                   />
-                  <Text style={styles.itemCol}>${item.total}</Text>
+                  <Text style={styles.itemCol}>${item.total.toFixed(2)}</Text>
                   <TouchableOpacity onPress={() => removeItem(index)}>
                     <Icon name="close" size={20} color="red" />
                   </TouchableOpacity>
@@ -194,8 +222,10 @@ export default function ReceiptConfirmationScreen({ route, navigation }) {
                 <>
                   <Text style={[styles.itemCol, { flex: 2 }]}>{item.name}</Text>
                   <Text style={styles.itemCol}>{item.quantity}</Text>
-                  <Text style={styles.itemCol}>${item.unitPrice}</Text>
-                  <Text style={styles.itemCol}>${item.total}</Text>
+                  <Text style={styles.itemCol}>
+                    ${item.unitPrice.toFixed(2)}
+                  </Text>
+                  <Text style={styles.itemCol}>${item.total.toFixed(2)}</Text>
                 </>
               )}
             </View>
@@ -207,7 +237,7 @@ export default function ReceiptConfirmationScreen({ route, navigation }) {
         <View style={styles.totalsSection}>
           <View style={styles.totalRow}>
             <Text>Subtotal:</Text>
-            <Text>${calculateSubtotal()}</Text>
+            <Text>${calculateSubtotal().toFixed(2)}</Text>
           </View>
 
           <View style={styles.totalRow}>
@@ -221,7 +251,7 @@ export default function ReceiptConfirmationScreen({ route, navigation }) {
                 placeholder="0.00"
               />
             ) : (
-              <Text>${receipt.tax}</Text>
+              <Text>${receipt.tax.toFixed(2)}</Text>
             )}
           </View>
 
@@ -230,19 +260,21 @@ export default function ReceiptConfirmationScreen({ route, navigation }) {
             {isEditing ? (
               <TextInput
                 style={styles.editInput}
-                value={String(receipt.tip || "0.00")}
+                value={String(receipt.tip || 0)}
                 onChangeText={(text) => handleGeneralChange("tip", text)}
                 keyboardType="numeric"
                 placeholder="0.00"
               />
             ) : (
-              <Text>${receipt.tip || "0.00"}</Text>
+              <Text>${(receipt.tip || 0).toFixed(2)}</Text>
             )}
           </View>
 
           <View style={styles.totalRow}>
             <Text style={styles.totalLabel}>Total:</Text>
-            <Text style={styles.totalAmount}>${recalculateTotal()}</Text>
+            <Text style={styles.totalAmount}>
+              ${recalculateTotal().toFixed(2)}
+            </Text>
           </View>
         </View>
 

@@ -11,18 +11,20 @@ export default function ReceiptDetailScreen({ route, navigation }) {
       const items = receipt.items
         .map(
           (item) =>
-            `- ${item.name}: $${item.unitPrice} x ${item.quantity} = $${item.total}`
+            `- ${item.name}: $${item.unitPrice.toFixed(2)} x ${
+              item.quantity
+            } = $${item.total.toFixed(2)}`
         )
         .join("\n");
 
       const shareMessage =
         `Receipt from ${receipt.merchantName}\n` +
-        `Date: ${receipt.date}\n\n` +
+        `Date: ${new Date(receipt.date).toLocaleDateString()}\n\n` +
         `Items:\n${items}\n\n` +
-        `Subtotal: $${receipt.subtotal}\n` +
-        `Tax: $${receipt.tax}\n` +
-        (receipt.tip ? `Tip: $${receipt.tip}\n` : "") +
-        `Total: $${receipt.total}`;
+        `Subtotal: $${receipt.subtotal.toFixed(2)}\n` +
+        `Tax: $${receipt.tax.toFixed(2)}\n` +
+        (receipt.tip ? `Tip: $${receipt.tip.toFixed(2)}\n` : "") +
+        `Total: $${receipt.total.toFixed(2)}`;
 
       await Share.share({
         message: shareMessage,
@@ -51,7 +53,9 @@ export default function ReceiptDetailScreen({ route, navigation }) {
     <ScrollView style={styles.container}>
       <Card containerStyle={styles.card}>
         <Card.Title style={styles.title}>{receipt.merchantName}</Card.Title>
-        <Text style={styles.date}>{receipt.date}</Text>
+        <Text style={styles.date}>
+          {new Date(receipt.date).toLocaleDateString()}
+        </Text>
 
         <Divider style={styles.divider} />
 
@@ -68,8 +72,10 @@ export default function ReceiptDetailScreen({ route, navigation }) {
                 </ListItem.Title>
                 <View style={styles.itemDetails}>
                   <Text style={styles.itemInfo}>Qty: {item.quantity}</Text>
-                  <Text style={styles.itemInfo}>${item.unitPrice}</Text>
-                  <Text style={styles.itemTotal}>${item.total}</Text>
+                  <Text style={styles.itemInfo}>
+                    ${item.unitPrice.toFixed(2)}
+                  </Text>
+                  <Text style={styles.itemTotal}>${item.total.toFixed(2)}</Text>
                 </View>
               </ListItem.Content>
             </ListItem>
@@ -81,21 +87,21 @@ export default function ReceiptDetailScreen({ route, navigation }) {
         <View style={styles.totals}>
           <View style={styles.totalRow}>
             <Text>Subtotal</Text>
-            <Text>${receipt.subtotal}</Text>
+            <Text>${receipt.subtotal.toFixed(2)}</Text>
           </View>
           <View style={styles.totalRow}>
             <Text>Tax</Text>
-            <Text>${receipt.tax}</Text>
+            <Text>${receipt.tax.toFixed(2)}</Text>
           </View>
-          {receipt.tip && (
+          {receipt.tip !== null && receipt.tip !== undefined && (
             <View style={styles.totalRow}>
               <Text>Tip</Text>
-              <Text>${receipt.tip}</Text>
+              <Text>${receipt.tip.toFixed(2)}</Text>
             </View>
           )}
           <View style={styles.totalRow}>
             <Text style={styles.totalText}>Total</Text>
-            <Text style={styles.totalAmount}>${receipt.total}</Text>
+            <Text style={styles.totalAmount}>${receipt.total.toFixed(2)}</Text>
           </View>
         </View>
 
