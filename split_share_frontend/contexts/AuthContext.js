@@ -1,4 +1,10 @@
-import React, { createContext, useState, useEffect, useContext } from "react";
+import React, {
+  createContext,
+  useState,
+  useEffect,
+  useContext,
+  useCallback,
+} from "react";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import axios from "axios";
 import { API_BASE_URL } from "../config";
@@ -36,7 +42,12 @@ export const AuthProvider = ({ children }) => {
     };
 
     loadStoredData();
-  }, []);
+  }, []); // Empty dependency array ensures this only runs once
+
+  // Use useCallback for functions that are used in dependency arrays
+  const isAuthenticated = useCallback(() => {
+    return !!token;
+  }, [token]);
 
   // Register a new user
   const register = async (name, email, password) => {
@@ -129,14 +140,9 @@ export const AuthProvider = ({ children }) => {
     }
   };
 
-  // Check if user is authenticated
-  const isAuthenticated = () => {
-    return !!token;
-  };
-
   const value = {
     user,
-    token, // Make sure token is included in the context value
+    token,
     loading,
     register,
     login,

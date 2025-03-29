@@ -6,19 +6,26 @@ import {
   TextInput,
   Alert,
   TouchableOpacity,
+  Platform,
 } from "react-native";
 import { Text, Button, Card, ListItem, Icon, Divider } from "@rneui/themed";
+import DateTimePicker from "@react-native-community/datetimepicker";
+import { useReceipts } from "../contexts/ReceiptContext";
 
 export default function ReceiptConfirmationScreen({ route, navigation }) {
-  const { receipt: initialReceipt } = route.params;
+  const { receipt: initialReceipt, isEditing: initialIsEditing } = route.params;
   const [receipt, setReceipt] = useState(initialReceipt);
-  const [isEditing, setIsEditing] = useState(false);
+  const [isEditing, setIsEditing] = useState(initialIsEditing || false);
+  const { saveReceipt } = useReceipts();
+  const [saving, setSaving] = useState(false);
 
   // Ensure numeric values are properly set on component load
   useEffect(() => {
     // Make sure all numeric values are proper numbers, not strings
     const formattedReceipt = {
       ...initialReceipt,
+      // Preserve the id if it exists (for updates)
+      id: initialReceipt.id || null,
       subtotal: parseFloat(initialReceipt.subtotal) || 0,
       tax: parseFloat(initialReceipt.tax) || 0,
       tip: parseFloat(initialReceipt.tip) || 0,
@@ -40,17 +47,27 @@ export default function ReceiptConfirmationScreen({ route, navigation }) {
 
     if (field === "name") {
       updatedItems[index] = { ...updatedItems[index], [field]: value };
+    } else if (field === "quantity" || field === "unitPrice") {
+      // Store the raw string input first
+      updatedItems[index] = { ...updatedItems[index], [field]: value };
+
+      // Only parse it to float for calculation if it's a valid number
+      const numericValue =
+        value === "" || value === "." ? 0 : parseFloat(value);
+
+      // Recalculate total based on current values
+      const qty =
+        field === "quantity" ? numericValue : updatedItems[index].quantity || 0;
+      const price =
+        field === "unitPrice"
+          ? numericValue
+          : updatedItems[index].unitPrice || 0;
+
+      updatedItems[index].total = parseFloat((qty * price).toFixed(2));
     } else {
-      // Convert to number for quantity, unitPrice and total
+      // For other numeric fields
       const numericValue = parseFloat(value) || 0;
       updatedItems[index] = { ...updatedItems[index], [field]: numericValue };
-    }
-
-    // Recalculate total if quantity or unitPrice changes
-    if (field === "quantity" || field === "unitPrice") {
-      const qty = updatedItems[index].quantity || 0;
-      const price = updatedItems[index].unitPrice || 0;
-      updatedItems[index].total = parseFloat((qty * price).toFixed(2));
     }
 
     const updatedReceipt = { ...receipt, items: updatedItems };
@@ -90,16 +107,9 @@ export default function ReceiptConfirmationScreen({ route, navigation }) {
     }
   };
 
-  const handleDateChange = (text) => {
-    try {
-      // Try to parse the date input
-      const newDate = new Date(text);
-      if (!isNaN(newDate.getTime())) {
-        setReceipt({ ...receipt, date: newDate.toISOString() });
-      }
-    } catch (error) {
-      console.error("Invalid date format:", error);
-      // Keep the existing date if parsing fails
+  const handleDateChange = (event, selectedDate) => {
+    if (selectedDate) {
+      setReceipt({ ...receipt, date: selectedDate.toISOString() });
     }
   };
 
@@ -107,7 +117,14 @@ export default function ReceiptConfirmationScreen({ route, navigation }) {
   const calculateSubtotal = (items = receipt.items) => {
     return parseFloat(
       items
-        .reduce((sum, item) => sum + (parseFloat(item.total) || 0), 0)
+        .reduce((sum, item) => {
+          const itemTotal =
+            typeof item.total === "string" &&
+            (item.total === "" || item.total === ".")
+              ? 0
+              : parseFloat(item.total) || 0;
+          return sum + itemTotal;
+        }, 0)
         .toFixed(2)
     );
   };
@@ -152,34 +169,77 @@ export default function ReceiptConfirmationScreen({ route, navigation }) {
     });
   };
 
-  const confirmReceipt = () => {
+  const confirmReceipt = async () => {
+    // Ensure all numeric values are properly parsed
+    const finalItems = receipt.items.map((item) => {
+      const quantity = parseFloat(item.quantity) || 0;
+      const unitPrice = parseFloat(item.unitPrice) || 0;
+      return {
+        // Preserve item id if it exists
+        id: item.id || null,
+        name: item.name,
+        quantity: quantity,
+        unitPrice: unitPrice,
+        total: parseFloat((quantity * unitPrice).toFixed(2)),
+      };
+    });
+
     // Ensure all calculations are final and accurate
-    const subtotal = calculateSubtotal();
-    const total = calculateTotal(subtotal, receipt.tax, receipt.tip);
+    const subtotal = calculateSubtotal(finalItems);
+    const tax = parseFloat(receipt.tax) || 0;
+    const tip = parseFloat(receipt.tip) || 0;
+    const total = calculateTotal(subtotal, tax, tip);
 
     const finalReceipt = {
+      // Preserve existing ID if available (update case)
+      id: receipt.id || null,
       ...receipt,
       subtotal: subtotal,
+      tax: tax,
+      tip: tip,
       total: total,
-      // Ensure all item totals are correct
-      items: receipt.items.map((item) => ({
-        ...item,
-        total: parseFloat((item.quantity * item.unitPrice).toFixed(2)),
-      })),
+      items: finalItems,
     };
 
-    Alert.alert("Confirm Receipt", "Save this receipt and proceed?", [
-      {
-        text: "Cancel",
-        style: "cancel",
-      },
-      {
-        text: "Confirm",
-        onPress: () => {
-          navigation.navigate("ReceiptDetail", { receipt: finalReceipt });
+    // Determine operation type based on receipt ID
+    const operationType = finalReceipt.id ? "Update" : "Create";
+
+    Alert.alert(
+      `${operationType} Receipt`,
+      `${operationType} this receipt and proceed?`,
+      [
+        {
+          text: "Cancel",
+          style: "cancel",
         },
-      },
-    ]);
+        {
+          text: "Confirm",
+          onPress: async () => {
+            try {
+              setSaving(true);
+
+              // Save receipt using the context function, which handles both create and update
+              const result = await saveReceipt(finalReceipt);
+
+              if (result.success) {
+                // Navigate back to the home screen
+                navigation.navigate("Home");
+              } else {
+                Alert.alert(
+                  "Error",
+                  result.message || "Failed to save receipt"
+                );
+              }
+            } catch (error) {
+              console.error("Error saving receipt:", error);
+              Alert.alert("Error", "An unexpected error occurred");
+            } finally {
+              setSaving(false);
+            }
+          },
+        },
+      ]
+    );
   };
 
   return (
@@ -207,11 +267,14 @@ export default function ReceiptConfirmationScreen({ route, navigation }) {
           )}
 
           {isEditing ? (
-            <TextInput
-              style={styles.editInput}
-              value={new Date(receipt.date).toLocaleDateString()}
-              onChangeText={handleDateChange}
-              placeholder="Date (MM/DD/YYYY)"
+            <DateTimePicker
+              value={new Date(receipt.date)}
+              mode="date"
+              display="default"
+              onChange={handleDateChange}
+              style={styles.datePicker}
+              themeVariant="light"
+              textColor="#000000"
             />
           ) : (
             <Text style={styles.date}>
@@ -256,23 +319,25 @@ export default function ReceiptConfirmationScreen({ route, navigation }) {
                   />
                   <TextInput
                     style={styles.editInput}
-                    value={String(item.quantity)}
+                    value={String(item.quantity || "")}
                     onChangeText={(text) =>
                       handleItemChange(index, "quantity", text)
                     }
-                    keyboardType="numeric"
+                    keyboardType="decimal-pad"
                     placeholder="Qty"
                   />
                   <TextInput
                     style={styles.editInput}
-                    value={String(item.unitPrice)}
+                    value={String(item.unitPrice || "")}
                     onChangeText={(text) =>
                       handleItemChange(index, "unitPrice", text)
                     }
-                    keyboardType="numeric"
+                    keyboardType="decimal-pad"
                     placeholder="Price"
                   />
-                  <Text style={styles.itemCol}>${item.total.toFixed(2)}</Text>
+                  <Text style={styles.itemCol}>
+                    ${parseFloat(item.total || 0).toFixed(2)}
+                  </Text>
                   <TouchableOpacity onPress={() => removeItem(index)}>
                     <Icon name="close" size={20} color="red" />
                   </TouchableOpacity>
@@ -280,11 +345,13 @@ export default function ReceiptConfirmationScreen({ route, navigation }) {
               ) : (
                 <>
                   <Text style={[styles.itemCol, { flex: 2 }]}>{item.name}</Text>
-                  <Text style={styles.itemCol}>{item.quantity}</Text>
+                  <Text style={styles.itemCol}>{item.quantity || 0}</Text>
                   <Text style={styles.itemCol}>
-                    ${item.unitPrice.toFixed(2)}
+                    ${parseFloat(item.unitPrice || 0).toFixed(2)}
                   </Text>
-                  <Text style={styles.itemCol}>${item.total.toFixed(2)}</Text>
+                  <Text style={styles.itemCol}>
+                    ${parseFloat(item.total || 0).toFixed(2)}
+                  </Text>
                 </>
               )}
             </View>
@@ -340,6 +407,8 @@ export default function ReceiptConfirmationScreen({ route, navigation }) {
           containerStyle={styles.confirmButton}
           buttonStyle={styles.primaryButton}
           onPress={confirmReceipt}
+          loading={saving}
+          disabled={saving}
         />
       </Card>
     </ScrollView>
@@ -453,5 +522,15 @@ const styles = StyleSheet.create({
   primaryButton: {
     paddingVertical: 12,
     backgroundColor: "#2089dc",
+  },
+  datePickerContainer: {
+    alignSelf: "flex-start",
+    marginVertical: 5,
+    borderBottomWidth: 1,
+    borderBottomColor: "#3498db",
+  },
+  datePicker: {
+    paddingVertical: 4,
+    marginLeft: -20,
   },
 });

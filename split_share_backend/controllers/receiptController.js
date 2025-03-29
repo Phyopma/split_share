@@ -26,7 +26,7 @@ async function processReceiptImage(req, res) {
       (req.file.size / (1024 * 1024)).toFixed(2) + "MB"
     );
 
-    // Get receipt data from Groq API
+    // Get receipt data from LLM API
     const receiptData = await extractReceiptData(base64Image);
 
     // Clean up the uploaded file
@@ -73,7 +73,7 @@ async function extractReceiptData(base64Image) {
             content: [
               {
                 type: "text",
-                text: "This is a receipt or invoice image. Extract the following information in a structured serializable JSON object: merchantName, date, location (String?), items (array with name, quantity, unitPrice, total for each item), subtotal, tax, tip (if available), and total. Make sure all values use proper numeric formats with decimals where applicable.",
+                text: "This is a receipt or invoice image. Extract the following information in a structured serializable JSON object: merchantName(String), date(YYYY-MM-DD), location (String), items (array with name(String), quantity(int), unitPrice(float), total(float) for each item), subtotal(float), tax(float), tip (float), and total(float). Make sure all values use proper numeric formats with decimals where applicable.",
               },
               {
                 type: "image_url",
@@ -275,9 +275,91 @@ async function deleteReceipt(req, res) {
   }
 }
 
+/**
+ * Update an existing receipt
+ */
+async function updateReceipt(req, res) {
+  try {
+    const { id } = req.params;
+    const userId = req.user.id;
+    const receiptData = req.body;
+
+    // Check if receipt exists and belongs to user
+    const existingReceipt = await prisma.receipt.findFirst({
+      where: { id, userId },
+    });
+
+    if (!existingReceipt) {
+      return res.status(404).json({
+        success: false,
+        message: "Receipt not found or doesn't belong to you",
+      });
+    }
+
+    // Parse the date string to a JavaScript Date object
+    const receiptDate = new Date(receiptData.date);
+
+    // First update the receipt
+    const updatedReceipt = await prisma.receipt.update({
+      where: { id },
+      data: {
+        merchantName: receiptData.merchantName,
+        date: receiptDate,
+        subtotal: parseFloat(receiptData.subtotal),
+        tax: parseFloat(receiptData.tax),
+        tip: receiptData.tip ? parseFloat(receiptData.tip) : null,
+        total: parseFloat(receiptData.total),
+      },
+    });
+
+    // Delete existing items to replace with new ones
+    await prisma.item.deleteMany({
+      where: { receiptId: id },
+    });
+
+    // Create new items
+    const itemsData = receiptData.items.map((item) => ({
+      receiptId: id,
+      name: item.name,
+      quantity: parseFloat(item.quantity),
+      unitPrice: parseFloat(item.unitPrice),
+      total: parseFloat(item.total),
+    }));
+
+    await prisma.item.createMany({
+      data: itemsData,
+    });
+
+    // Get updated receipt with items
+    const completeReceipt = await prisma.receipt.findUnique({
+      where: { id },
+      include: { items: true },
+    });
+
+    // Format the date for response
+    const formattedReceipt = {
+      ...completeReceipt,
+      date: completeReceipt.date.toISOString(),
+    };
+
+    res.status(200).json({
+      success: true,
+      data: formattedReceipt,
+    });
+  } catch (error) {
+    console.error("Error updating receipt:", error);
+    res.status(500).json({
+      success: false,
+      message: error.message || "Failed to update receipt",
+    });
+  }
+}
+
+// Export the function
 module.exports = {
   processReceiptImage,
   saveReceipt,
+  updateReceipt, // Add this export
   getUserReceipts,
   deleteReceipt,
 };

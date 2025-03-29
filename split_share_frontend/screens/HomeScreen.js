@@ -178,11 +178,37 @@ export default function HomeScreen({ navigation }) {
         throw new Error("No data returned from server");
       }
 
-      // Process the extracted receipt data
+      // Safely parse date string to ISO format
+      let parsedDate;
+      try {
+        // Try to parse the date using a safer approach
+        if (responseData.data.date) {
+          // Check if date is in YYYY-MM-DD format
+          if (/^\d{4}-\d{1,2}-\d{1,2}$/.test(responseData.data.date)) {
+            parsedDate = new Date(responseData.data.date).toISOString();
+          } else {
+            // If date is in another format, try to parse or use current date
+            const parsedDateObj = new Date(responseData.data.date);
+            if (!isNaN(parsedDateObj.getTime())) {
+              parsedDate = parsedDateObj.toISOString();
+            } else {
+              parsedDate = new Date().toISOString();
+              console.warn("Couldn't parse date, using current date instead");
+            }
+          }
+        } else {
+          // If no date provided, use current date
+          parsedDate = new Date().toISOString();
+          console.warn("No date in response, using current date");
+        }
+      } catch (dateError) {
+        console.error("Error parsing date:", dateError);
+        parsedDate = new Date().toISOString();
+      }
+
       const newReceipt = {
-        id: Date.now().toString(),
         merchantName: responseData.data.merchantName || "Unknown Merchant",
-        date: responseData.data.date || new Date().toISOString(),
+        date: parsedDate,
         items: (responseData.data.items || []).map((item) => ({
           name: item.name || item.description || "Unknown Item",
           quantity: parseFloat(item.quantity) || 1,
@@ -195,11 +221,11 @@ export default function HomeScreen({ navigation }) {
         total: parseFloat(responseData.data.total) || 0.0,
       };
 
-      // Save receipt
-      await saveReceiptToContext(newReceipt);
-
-      // Navigate to confirmation screen
-      navigation.navigate("ReceiptConfirmation", { receipt: newReceipt });
+      // Navigate to confirmation screen WITHOUT saving to DB
+      navigation.navigate("ReceiptConfirmation", {
+        receipt: newReceipt,
+        isEditing: true, // Set editing mode to true for a new receipt
+      });
     } catch (error) {
       console.error("Error processing receipt:", error);
 

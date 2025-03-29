@@ -9,7 +9,7 @@ import ReceiptConfirmationScreen from "./screens/ReceiptConfirmationScreen";
 import LoginScreen from "./screens/auth/LoginScreen";
 import RegisterScreen from "./screens/auth/RegisterScreen";
 import { Colors } from "./components/CupertinoStyles";
-import { useEffect, useState } from "react";
+import { useEffect, useState, useMemo } from "react"; // Added useMemo
 
 const Stack = createNativeStackNavigator();
 
@@ -17,11 +17,18 @@ function AppNavigator() {
   const { isAuthenticated, loading } = useAuth();
   const [isReady, setIsReady] = useState(false);
 
+  // Use useEffect with a proper dependency array
   useEffect(() => {
+    // Only update isReady when loading changes
     if (!loading) {
       setIsReady(true);
     }
-  }, [loading]);
+  }, [loading]); // Specify dependency array correctly
+
+  // Use a memoized value for the initial route to prevent unnecessary navigation rerenders
+  const initialRouteName = useMemo(() => {
+    return isAuthenticated() ? "Home" : "Login";
+  }, [isAuthenticated]);
 
   if (!isReady) {
     return null; // or a loading screen
@@ -30,7 +37,7 @@ function AppNavigator() {
   return (
     <NavigationContainer>
       <Stack.Navigator
-        initialRouteName={isAuthenticated() ? "Home" : "Login"}
+        initialRouteName={initialRouteName}
         screenOptions={{
           headerStyle: {
             backgroundColor: Colors.primary,
@@ -60,7 +67,11 @@ function AppNavigator() {
             <Stack.Screen
               name="ReceiptConfirmation"
               component={ReceiptConfirmationScreen}
-              options={{ title: "Confirm Receipt" }}
+              options={{
+                title: "Confirm Receipt",
+                // Don't allow swiping back when in confirmation screen to prevent data loss
+                gestureEnabled: false,
+              }}
             />
           </>
         ) : (
@@ -84,6 +95,7 @@ function AppNavigator() {
 }
 
 export default function App() {
+  // Using memo here to ensure the app component is not rerendered unnecessarily
   return (
     <ThemeProvider>
       <AuthProvider>

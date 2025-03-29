@@ -8,6 +8,7 @@ const {
   saveReceipt,
   getUserReceipts,
   deleteReceipt,
+  updateReceipt,
 } = require("./controllers/receiptController");
 const {
   register,
@@ -38,6 +39,7 @@ app.post(
   processReceiptImage
 );
 app.post("/api/receipts", auth, saveReceipt);
+app.put("/api/receipts/:id", auth, updateReceipt); // Add this new route
 app.get("/api/receipts", auth, getUserReceipts);
 app.delete("/api/receipts/:id", auth, deleteReceipt);
 

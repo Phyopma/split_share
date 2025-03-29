@@ -37,7 +37,11 @@ export default function ReceiptDetailScreen({ route, navigation }) {
   };
 
   const editReceipt = () => {
-    navigation.navigate("ReceiptConfirmation", { receipt });
+    // Navigate to ReceiptConfirmation with editing mode enabled and the existing receipt
+    navigation.navigate("ReceiptConfirmation", {
+      receipt,
+      isEditing: true,
+    });
   };
 
   const splitBill = () => {

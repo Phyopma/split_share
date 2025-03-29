@@ -1,4 +1,10 @@
-import React, { createContext, useState, useContext, useEffect } from "react";
+import React, {
+  createContext,
+  useState,
+  useContext,
+  useEffect,
+  useCallback,
+} from "react";
 import apiClient from "../utils/apiClient";
 import { useAuth } from "./AuthContext";
 
@@ -13,13 +19,18 @@ export const ReceiptProvider = ({ children }) => {
   const [error, setError] = useState(null);
 
   // Load receipts from API when authenticated
-  useEffect(() => {
-    if (isAuthenticated()) {
-      fetchReceipts();
-    }
-  }, [isAuthenticated]);
+  // Use a ref to track if we've already fetched receipts
+  const [initialFetchDone, setInitialFetchDone] = useState(false);
 
-  const fetchReceipts = async () => {
+  useEffect(() => {
+    if (isAuthenticated() && !initialFetchDone) {
+      fetchReceipts();
+      setInitialFetchDone(true);
+    }
+  }, [isAuthenticated, initialFetchDone]);
+
+  // Use useCallback for functions that are used in dependency arrays
+  const fetchReceipts = useCallback(async () => {
     if (!isAuthenticated()) return;
 
     setLoading(true);
@@ -54,7 +65,7 @@ export const ReceiptProvider = ({ children }) => {
     } finally {
       setLoading(false);
     }
-  };
+  }, [isAuthenticated]);
 
   const saveReceipt = async (receiptData) => {
     if (!isAuthenticated())
@@ -67,7 +78,6 @@ export const ReceiptProvider = ({ children }) => {
       // Ensure all fields are properly formatted before sending
       const formattedReceiptData = {
         ...receiptData,
-        // Ensure date is a string
         date: receiptData.date,
         subtotal: parseFloat(receiptData.subtotal),
         tax: parseFloat(receiptData.tax),
@@ -81,13 +91,23 @@ export const ReceiptProvider = ({ children }) => {
         })),
       };
 
-      const response = await apiClient.post(
-        "/api/receipts",
-        formattedReceiptData
-      );
+      // Check if it's an update (has ID) or create (no ID)
+      const isUpdate = !!receiptData.id;
+      let response;
+
+      if (isUpdate) {
+        // Update existing receipt
+        response = await apiClient.put(
+          `/api/receipts/${receiptData.id}`,
+          formattedReceiptData
+        );
+      } else {
+        // Create new receipt
+        response = await apiClient.post("/api/receipts", formattedReceiptData);
+      }
 
       if (response.data.success) {
-        // Add new receipt to state with proper data types
+        // Format the response data with proper data types
         const newReceipt = {
           ...response.data.data,
           subtotal: parseFloat(response.data.data.subtotal),
@@ -105,17 +125,38 @@ export const ReceiptProvider = ({ children }) => {
           })),
         };
 
-        setReceipts((prevReceipts) => [...prevReceipts, newReceipt]);
+        // Update state based on whether it's a new or updated receipt
+        if (isUpdate) {
+          setReceipts((prevReceipts) =>
+            prevReceipts.map((r) => (r.id === newReceipt.id ? newReceipt : r))
+          );
+        } else {
+          setReceipts((prevReceipts) => [...prevReceipts, newReceipt]);
+        }
+
         return { success: true, data: newReceipt };
       } else {
-        throw new Error(response.data.message || "Failed to save receipt");
+        throw new Error(
+          response.data.message ||
+            `Failed to ${isUpdate ? "update" : "save"} receipt`
+        );
       }
     } catch (error) {
-      console.error("Error saving receipt:", error);
-      setError(error.message || "An error occurred while saving the receipt");
+      console.error(
+        `Error ${receiptData.id ? "updating" : "saving"} receipt:`,
+        error
+      );
+      setError(
+        error.message ||
+          `An error occurred while ${
+            receiptData.id ? "updating" : "saving"
+          } the receipt`
+      );
       return {
         success: false,
-        message: error.message || "Failed to save receipt",
+        message:
+          error.message ||
+          `Failed to ${receiptData.id ? "update" : "save"} receipt`,
       };
     } finally {
       setLoading(false);
