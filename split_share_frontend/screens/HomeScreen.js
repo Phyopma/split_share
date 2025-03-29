@@ -5,16 +5,15 @@ import {
   ScrollView,
   ActivityIndicator,
   Alert,
-  Image,
   TouchableOpacity,
   RefreshControl,
+  Platform,
 } from "react-native";
-import { Button, Text, Card, FAB, Icon, Header } from "@rneui/themed";
+import { Button, Text, Card, FAB, Icon } from "@rneui/themed";
 import * as ImagePicker from "expo-image-picker";
-import * as FileSystem from "expo-file-system";
 import { useAuth } from "../contexts/AuthContext";
 import { useReceipts } from "../contexts/ReceiptContext";
-import { API_BASE_URL } from "../config";
+import apiClient from "../utils/apiClient";
 
 export default function HomeScreen({ navigation }) {
   const { user, token, logout } = useAuth();
@@ -70,125 +69,151 @@ export default function HomeScreen({ navigation }) {
   }, []);
 
   const pickImage = async () => {
-    const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ImagePicker.MediaTypeOptions.Images,
-      allowsEditing: true,
-      // aspect: [4, 3],
-      quality: 1,
-    });
+    try {
+      // Request media library permissions first
+      const { status } =
+        await ImagePicker.requestMediaLibraryPermissionsAsync();
 
-    if (!result.canceled) {
-      try {
+      if (status !== "granted") {
+        Alert.alert(
+          "Permission needed",
+          "Please grant camera roll permissions to upload receipts"
+        );
+        return;
+      }
+
+      // Use the correct enum value from ImagePicker
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ImagePicker.MediaTypeOptions.Images, // Use the proper enum value
+        allowsEditing: true,
+        quality: 0.8,
+        aspect: [3, 4],
+      });
+
+      console.log("Image picker result:", result);
+
+      if (!result.canceled && result.assets && result.assets.length > 0) {
         setLoading(true);
         await processReceiptImage(result.assets[0].uri);
-      } catch (error) {
-        Alert.alert("Error", "Failed to process the receipt image");
-        console.error("Error processing receipt:", error);
-      } finally {
-        setLoading(false);
       }
+    } catch (error) {
+      console.error("Error picking image:", error);
+      Alert.alert("Error", `Failed to select the image: ${error.message}`);
+    } finally {
+      setLoading(false);
     }
   };
 
   const takePhoto = async () => {
-    const { status } = await ImagePicker.requestCameraPermissionsAsync();
-    if (status !== "granted") {
-      Alert.alert(
-        "Permission needed",
-        "Camera permission is required to take photos"
-      );
-      return;
-    }
+    try {
+      const { status } = await ImagePicker.requestCameraPermissionsAsync();
 
-    const result = await ImagePicker.launchCameraAsync({
-      allowsEditing: true,
-      aspect: [4, 3],
-      quality: 1,
-    });
+      if (status !== "granted") {
+        Alert.alert(
+          "Permission needed",
+          "Camera permission is required to take photos"
+        );
+        return;
+      }
 
-    if (!result.canceled) {
-      try {
+      const result = await ImagePicker.launchCameraAsync({
+        allowsEditing: true,
+        quality: 0.8,
+        aspect: [3, 4],
+      });
+
+      console.log("Camera result:", result);
+
+      if (!result.canceled && result.assets && result.assets.length > 0) {
         setLoading(true);
         await processReceiptImage(result.assets[0].uri);
-      } catch (error) {
-        Alert.alert("Error", "Failed to process the receipt image");
-        console.error("Error processing receipt:", error);
-      } finally {
-        setLoading(false);
       }
+    } catch (error) {
+      console.error("Error taking photo:", error);
+      Alert.alert("Error", "Failed to capture the image");
+    } finally {
+      setLoading(false);
     }
   };
 
   const processReceiptImage = async (imageUri) => {
-    // Create form data for the image upload
-    const formData = new FormData();
-    const filename = imageUri.split("/").pop();
-    const match = /\.(\w+)$/.exec(filename);
-    const type = match ? `image/${match[1]}` : "image";
-
-    formData.append("image", {
-      uri: imageUri,
-      name: filename,
-      type,
-    });
-
-    // Upload to backend API
     try {
-      console.log(`Uploading image to ${API_BASE_URL}/api/receipts/upload`);
+      if (!imageUri) {
+        throw new Error("No image URI provided");
+      }
 
-      // Include the authentication token in the request headers
-      const response = await fetch(`${API_BASE_URL}/api/receipts/upload`, {
-        method: "POST",
-        body: formData,
-        headers: {
-          Accept: "application/json",
-          "Content-Type": "multipart/form-data",
-          Authorization: `Bearer ${token}`, // Add the auth token here
-        },
+      console.log("Processing image URI:", imageUri);
+
+      // Create form data for the image upload
+      const formData = new FormData();
+      const filename = imageUri.split("/").pop() || "receipt.jpg";
+      const match = /\.(\w+)$/.exec(filename);
+      const type = match ? `image/${match[1].toLowerCase()}` : "image/jpeg";
+
+      // Add image to form data
+      formData.append("image", {
+        uri: Platform.OS === "ios" ? imageUri.replace("file://", "") : imageUri,
+        name: filename,
+        type,
       });
 
-      const responseData = await response.json();
+      console.log("Uploading receipt image with filename:", filename);
 
-      if (!response.ok) {
-        throw new Error(
-          responseData.message || `Server responded with ${response.status}`
-        );
+      // Use apiClient for the request
+      const response = await apiClient.post("/api/receipts/upload", formData, {
+        headers: {
+          "Content-Type": "multipart/form-data",
+          Authorization: `Bearer ${token}`, // Ensure token is included
+        },
+        timeout: 60000, // Increase timeout for image upload
+      });
+
+      const responseData = response.data;
+
+      if (!responseData.success) {
+        throw new Error(responseData.message || "Server processing failed");
       }
 
-      if (responseData.success && responseData.data) {
-        // Process the extracted receipt data
-        const newReceipt = {
-          id: Date.now().toString(),
-          merchantName: responseData.data.merchantName || "Unknown Merchant",
-          // Ensure date is properly formatted as string
-          date: responseData.data.date || new Date().toISOString(),
-          items:
-            responseData.data.items.map((item) => ({
-              name: item.name || item.description || "Unknown Item",
-              quantity: parseFloat(item.quantity) || 1,
-              unitPrice: parseFloat(item.unitPrice) || 0.0,
-              total: parseFloat(item.total) || 0.0,
-            })) || [],
-          subtotal: parseFloat(responseData.data.subtotal) || 0.0,
-          tax: parseFloat(responseData.data.tax) || 0.0,
-          tip: parseFloat(responseData.data.tip) || 0.0,
-          total: parseFloat(responseData.data.total) || 0.0,
-        };
-
-        // Save receipt using context function
-        saveReceiptToContext(newReceipt);
-
-        // Navigate to confirmation screen for user to verify data
-        navigation.navigate("ReceiptConfirmation", { receipt: newReceipt });
-      } else {
-        throw new Error(responseData.message || "Invalid response from server");
+      if (!responseData.data) {
+        throw new Error("No data returned from server");
       }
+
+      // Process the extracted receipt data
+      const newReceipt = {
+        id: Date.now().toString(),
+        merchantName: responseData.data.merchantName || "Unknown Merchant",
+        date: responseData.data.date || new Date().toISOString(),
+        items: (responseData.data.items || []).map((item) => ({
+          name: item.name || item.description || "Unknown Item",
+          quantity: parseFloat(item.quantity) || 1,
+          unitPrice: parseFloat(item.unitPrice) || 0.0,
+          total: parseFloat(item.total) || 0.0,
+        })),
+        subtotal: parseFloat(responseData.data.subtotal) || 0.0,
+        tax: parseFloat(responseData.data.tax) || 0.0,
+        tip: responseData.data.tip ? parseFloat(responseData.data.tip) : 0.0,
+        total: parseFloat(responseData.data.total) || 0.0,
+      };
+
+      // Save receipt
+      await saveReceiptToContext(newReceipt);
+
+      // Navigate to confirmation screen
+      navigation.navigate("ReceiptConfirmation", { receipt: newReceipt });
     } catch (error) {
-      console.error("Error uploading receipt:", error);
-      Alert.alert(
-        "Error",
-        error.message || "Failed to upload and process the receipt"
-      );
+      console.error("Error processing receipt:", error);
+
+      let errorMessage = "Failed to upload and process the receipt";
+      if (error.response) {
+        console.error("Response error data:", error.response.data);
+        errorMessage = error.response.data?.message || errorMessage;
+      } else if (error.message) {
+        errorMessage = error.message;
+      }
+
+      Alert.alert("Error", errorMessage);
+    } finally {
+      setLoading(false);
     }
   };
 

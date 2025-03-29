@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import {
   View,
   StyleSheet,
@@ -13,6 +13,27 @@ export default function ReceiptConfirmationScreen({ route, navigation }) {
   const { receipt: initialReceipt } = route.params;
   const [receipt, setReceipt] = useState(initialReceipt);
   const [isEditing, setIsEditing] = useState(false);
+
+  // Ensure numeric values are properly set on component load
+  useEffect(() => {
+    // Make sure all numeric values are proper numbers, not strings
+    const formattedReceipt = {
+      ...initialReceipt,
+      subtotal: parseFloat(initialReceipt.subtotal) || 0,
+      tax: parseFloat(initialReceipt.tax) || 0,
+      tip: parseFloat(initialReceipt.tip) || 0,
+      total: parseFloat(initialReceipt.total) || 0,
+      items: initialReceipt.items.map((item) => ({
+        ...item,
+        quantity: parseFloat(item.quantity) || 0,
+        unitPrice: parseFloat(item.unitPrice) || 0,
+        total: parseFloat(item.total) || 0,
+      })),
+    };
+
+    // Update the formatted receipt
+    setReceipt(formattedReceipt);
+  }, []);
 
   const handleItemChange = (index, field, value) => {
     const updatedItems = [...receipt.items];
@@ -29,10 +50,23 @@ export default function ReceiptConfirmationScreen({ route, navigation }) {
     if (field === "quantity" || field === "unitPrice") {
       const qty = updatedItems[index].quantity || 0;
       const price = updatedItems[index].unitPrice || 0;
-      updatedItems[index].total = qty * price;
+      updatedItems[index].total = parseFloat((qty * price).toFixed(2));
     }
 
-    setReceipt({ ...receipt, items: updatedItems });
+    const updatedReceipt = { ...receipt, items: updatedItems };
+
+    // Recalculate subtotal whenever items change
+    const subtotal = calculateSubtotal(updatedItems);
+    updatedReceipt.subtotal = subtotal;
+
+    // Recalculate total
+    updatedReceipt.total = calculateTotal(
+      subtotal,
+      updatedReceipt.tax,
+      updatedReceipt.tip
+    );
+
+    setReceipt(updatedReceipt);
   };
 
   const handleGeneralChange = (field, value) => {
@@ -40,7 +74,19 @@ export default function ReceiptConfirmationScreen({ route, navigation }) {
       setReceipt({ ...receipt, [field]: value });
     } else {
       // For numeric fields like tax, tip, etc.
-      setReceipt({ ...receipt, [field]: parseFloat(value) || 0 });
+      const numericValue = parseFloat(value) || 0;
+      const updatedReceipt = { ...receipt, [field]: numericValue };
+
+      // Recalculate total whenever tax or tip changes
+      if (field === "tax" || field === "tip") {
+        updatedReceipt.total = calculateTotal(
+          updatedReceipt.subtotal,
+          field === "tax" ? numericValue : updatedReceipt.tax,
+          field === "tip" ? numericValue : updatedReceipt.tip
+        );
+      }
+
+      setReceipt(updatedReceipt);
     }
   };
 
@@ -57,34 +103,70 @@ export default function ReceiptConfirmationScreen({ route, navigation }) {
     }
   };
 
-  const calculateSubtotal = () => {
-    const subtotal = receipt.items.reduce(
-      (sum, item) => sum + (item.total || 0),
-      0
+  // Pure function to calculate subtotal from items
+  const calculateSubtotal = (items = receipt.items) => {
+    return parseFloat(
+      items
+        .reduce((sum, item) => sum + (parseFloat(item.total) || 0), 0)
+        .toFixed(2)
     );
-    return subtotal;
   };
 
-  const recalculateTotal = () => {
-    const subtotal = calculateSubtotal();
-    const tax = receipt.tax || 0;
-    const tip = receipt.tip || 0;
-    return subtotal + tax + tip;
+  // Pure function to calculate total
+  const calculateTotal = (subtotal, tax, tip) => {
+    const taxValue = parseFloat(tax) || 0;
+    const tipValue = parseFloat(tip) || 0;
+    return parseFloat((subtotal + taxValue + tipValue).toFixed(2));
   };
 
-  const updateTotals = () => {
-    const subtotal = calculateSubtotal();
-    const total = recalculateTotal();
+  const addItem = () => {
+    const newItem = {
+      name: "New Item",
+      quantity: 1,
+      unitPrice: 0,
+      total: 0,
+    };
+
+    const updatedItems = [...receipt.items, newItem];
+    const subtotal = calculateSubtotal(updatedItems);
+
     setReceipt({
       ...receipt,
-      subtotal,
-      total,
+      items: updatedItems,
+      subtotal: subtotal,
+      total: calculateTotal(subtotal, receipt.tax, receipt.tip),
+    });
+  };
+
+  const removeItem = (index) => {
+    const updatedItems = [...receipt.items];
+    updatedItems.splice(index, 1);
+
+    const subtotal = calculateSubtotal(updatedItems);
+
+    setReceipt({
+      ...receipt,
+      items: updatedItems,
+      subtotal: subtotal,
+      total: calculateTotal(subtotal, receipt.tax, receipt.tip),
     });
   };
 
   const confirmReceipt = () => {
-    // Final update of all calculated fields
-    updateTotals();
+    // Ensure all calculations are final and accurate
+    const subtotal = calculateSubtotal();
+    const total = calculateTotal(subtotal, receipt.tax, receipt.tip);
+
+    const finalReceipt = {
+      ...receipt,
+      subtotal: subtotal,
+      total: total,
+      // Ensure all item totals are correct
+      items: receipt.items.map((item) => ({
+        ...item,
+        total: parseFloat((item.quantity * item.unitPrice).toFixed(2)),
+      })),
+    };
 
     Alert.alert("Confirm Receipt", "Save this receipt and proceed?", [
       {
@@ -94,33 +176,10 @@ export default function ReceiptConfirmationScreen({ route, navigation }) {
       {
         text: "Confirm",
         onPress: () => {
-          navigation.navigate("ReceiptDetail", { receipt: receipt });
+          navigation.navigate("ReceiptDetail", { receipt: finalReceipt });
         },
       },
     ]);
-  };
-
-  const addItem = () => {
-    const newItem = {
-      name: "New Item",
-      quantity: "1",
-      unitPrice: "0.00",
-      total: "0.00",
-    };
-    setReceipt({
-      ...receipt,
-      items: [...receipt.items, newItem],
-    });
-  };
-
-  const removeItem = (index) => {
-    const updatedItems = [...receipt.items];
-    updatedItems.splice(index, 1);
-    setReceipt({
-      ...receipt,
-      items: updatedItems,
-    });
-    setTimeout(updateTotals, 0);
   };
 
   return (
@@ -237,7 +296,7 @@ export default function ReceiptConfirmationScreen({ route, navigation }) {
         <View style={styles.totalsSection}>
           <View style={styles.totalRow}>
             <Text>Subtotal:</Text>
-            <Text>${calculateSubtotal().toFixed(2)}</Text>
+            <Text>${receipt.subtotal.toFixed(2)}</Text>
           </View>
 
           <View style={styles.totalRow}>
@@ -272,9 +331,7 @@ export default function ReceiptConfirmationScreen({ route, navigation }) {
 
           <View style={styles.totalRow}>
             <Text style={styles.totalLabel}>Total:</Text>
-            <Text style={styles.totalAmount}>
-              ${recalculateTotal().toFixed(2)}
-            </Text>
+            <Text style={styles.totalAmount}>${receipt.total.toFixed(2)}</Text>
           </View>
         </View>
 

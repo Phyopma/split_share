@@ -21,6 +21,10 @@ async function processReceiptImage(req, res) {
     const base64Image = imageBuffer.toString("base64");
 
     console.log("Processing image:", req.file.originalname);
+    console.log(
+      "Image size:",
+      (req.file.size / (1024 * 1024)).toFixed(2) + "MB"
+    );
 
     // Get receipt data from Groq API
     const receiptData = await extractReceiptData(base64Image);
@@ -46,17 +50,21 @@ async function processReceiptImage(req, res) {
  */
 async function extractReceiptData(base64Image) {
   try {
-    const GROQ_API_KEY = process.env.GROQ_API_KEY;
-    const MODEL = process.env.MODEL || "llama-3.2-11b-vision-preview";
+    const API_KEY = process.env.OPENROUTER_API_KEY;
+    const MODEL =
+      process.env.OPENROUTER_MODEL || "llama-3.2-11b-vision-preview";
+    const BASE_URL =
+      process.env.OPENROUTER_BASE_URL ||
+      "https://api.groq.com/openai/v1/chat/completions";
 
-    if (!GROQ_API_KEY) {
-      throw new Error("GROQ_API_KEY environment variable is not set");
+    if (!API_KEY) {
+      throw new Error("OpenRouter environment variable is not set");
     }
 
-    console.log(`Using Groq API with model: ${MODEL}`);
+    console.log(`Using OpenRouter API with model: ${MODEL}`);
 
     const response = await axios.post(
-      "https://api.groq.com/openai/v1/chat/completions",
+      BASE_URL,
       {
         model: MODEL,
         messages: [
@@ -65,7 +73,7 @@ async function extractReceiptData(base64Image) {
             content: [
               {
                 type: "text",
-                text: "This is a receipt or invoice image. Extract the following information in a structured JSON format: merchantName, date, location, items (array with name, quantity, unitPrice, total for each item), subtotal, tax, tip (if available), and total. Make sure all values use proper numeric formats with decimals where applicable. For each item, use 'name' for the item description, not 'description'.",
+                text: "This is a receipt or invoice image. Extract the following information in a structured serializable JSON object: merchantName, date, location (String?), items (array with name, quantity, unitPrice, total for each item), subtotal, tax, tip (if available), and total. Make sure all values use proper numeric formats with decimals where applicable.",
               },
               {
                 type: "image_url",
@@ -76,14 +84,14 @@ async function extractReceiptData(base64Image) {
             ],
           },
         ],
-        temperature: 0.2,
-        max_completion_tokens: 1024,
+        temperature: 0.1,
         response_format: { type: "json_object" },
+        max_completion_tokens: 1024,
       },
       {
         headers: {
           "Content-Type": "application/json",
-          Authorization: `Bearer ${GROQ_API_KEY}`,
+          Authorization: `Bearer ${API_KEY}`,
         },
       }
     );
@@ -91,10 +99,21 @@ async function extractReceiptData(base64Image) {
     // Parse the response to get the extracted receipt data
     const result = response.data.choices[0].message.content;
     console.log("Successfully extracted receipt data");
-    return JSON.parse(result);
+
+    // Clean the result in case it contains markdown code blocks
+    const cleanedResult = cleanJsonResponse(result);
+    console.log("Cleaned result:", cleanedResult);
+
+    try {
+      return JSON.parse(cleanedResult);
+    } catch (parseError) {
+      console.error("JSON parsing error:", parseError.message);
+      console.error("Content that failed to parse:", cleanedResult);
+      throw new Error(`Failed to parse JSON response: ${parseError.message}`);
+    }
   } catch (error) {
     console.error(
-      "Error calling Groq API:",
+      "Error calling LLM API:",
       error.response?.data || error.message
     );
 
@@ -106,9 +125,30 @@ async function extractReceiptData(base64Image) {
 
     throw new Error(
       error.response?.data?.error?.message ||
-        "Failed to extract receipt data. Please check your Groq API key and model configuration."
+        "Failed to extract receipt data. Please check your LLM API key and model configuration."
     );
   }
+}
+
+/**
+ * Cleans JSON response from markdown formatting and other potential issues
+ */
+function cleanJsonResponse(response) {
+  // Remove markdown code block indicators like ```json and ```
+  let cleaned = response.replace(/```json\s*/g, "").replace(/```\s*$/g, "");
+
+  // Trim any whitespace
+  cleaned = cleaned.trim();
+
+  // Handle case where there might be other text before or after the JSON
+  const jsonStartIndex = cleaned.indexOf("{");
+  const jsonEndIndex = cleaned.lastIndexOf("}");
+
+  if (jsonStartIndex !== -1 && jsonEndIndex !== -1) {
+    cleaned = cleaned.substring(jsonStartIndex, jsonEndIndex + 1);
+  }
+
+  return cleaned;
 }
 
 /**

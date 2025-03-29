@@ -1,8 +1,6 @@
 require("dotenv").config();
 const express = require("express");
 const cors = require("cors");
-const multer = require("multer");
-const fs = require("fs");
 const path = require("path");
 const prisma = require("./prisma/dbClient");
 const {
@@ -17,6 +15,7 @@ const {
   getCurrentUser,
 } = require("./controllers/authController");
 const auth = require("./middleware/auth");
+const { uploadAndResize } = require("./middleware/upload");
 
 const app = express();
 const port = process.env.PORT || 3000;
@@ -25,33 +24,6 @@ const port = process.env.PORT || 3000;
 app.use(cors());
 app.use(express.json({ limit: "10mb" }));
 app.use(express.urlencoded({ extended: true, limit: "10mb" }));
-
-// Set up multer for handling file uploads
-const storage = multer.diskStorage({
-  destination: function (req, file, cb) {
-    const uploadDir = path.join(__dirname, "uploads");
-    if (!fs.existsSync(uploadDir)) {
-      fs.mkdirSync(uploadDir, { recursive: true });
-    }
-    cb(null, uploadDir);
-  },
-  filename: function (req, file, cb) {
-    const uniqueSuffix = Date.now() + "-" + Math.round(Math.random() * 1e9);
-    cb(null, uniqueSuffix + path.extname(file.originalname));
-  },
-});
-
-const upload = multer({
-  storage: storage,
-  limits: { fileSize: 5 * 1024 * 1024 }, // 5MB limit
-  fileFilter: (req, file, cb) => {
-    if (file.mimetype.startsWith("image/")) {
-      cb(null, true);
-    } else {
-      cb(new Error("Only image files are allowed!"), false);
-    }
-  },
-});
 
 // Auth Routes
 app.post("/api/auth/register", register);
@@ -62,7 +34,7 @@ app.get("/api/auth/user", auth, getCurrentUser);
 app.post(
   "/api/receipts/upload",
   auth,
-  upload.single("image"),
+  uploadAndResize("image"),
   processReceiptImage
 );
 app.post("/api/receipts", auth, saveReceipt);
