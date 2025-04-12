@@ -9,12 +9,26 @@ const {
   getUserReceipts,
   deleteReceipt,
   updateReceipt,
+  getGroupReceipts,
+  splitReceiptByPercentage,
+  splitReceiptByItemPercentage,
+  splitReceiptByItems,
+  markReceiptSettled,
 } = require("./controllers/receiptController");
 const {
   register,
   login,
   getCurrentUser,
 } = require("./controllers/authController");
+const {
+  createGroup,
+  getUserGroups,
+  getGroupById,
+  inviteUserToGroup,
+  removeUserFromGroup,
+  deleteGroup,
+  getGroupSummary,
+} = require("./controllers/groupController");
 const auth = require("./middleware/auth");
 const { uploadAndResize } = require("./middleware/upload");
 
@@ -39,9 +53,31 @@ app.post(
   processReceiptImage
 );
 app.post("/api/receipts", auth, saveReceipt);
-app.put("/api/receipts/:id", auth, updateReceipt); // Add this new route
+app.put("/api/receipts/:id", auth, updateReceipt);
 app.get("/api/receipts", auth, getUserReceipts);
 app.delete("/api/receipts/:id", auth, deleteReceipt);
+
+// Group Routes
+app.post("/api/groups", auth, createGroup);
+app.get("/api/groups", auth, getUserGroups);
+app.get("/api/groups/:id", auth, getGroupById);
+app.post("/api/groups/:id/invite", auth, inviteUserToGroup);
+app.delete("/api/groups/:groupId/users/:userId", auth, removeUserFromGroup);
+app.delete("/api/groups/:id", auth, deleteGroup);
+
+// Group Receipts Routes
+app.get("/api/groups/:groupId/receipts", auth, getGroupReceipts);
+app.get("/api/groups/:id/summary", auth, getGroupSummary);
+
+// Receipt Splitting Routes
+app.post("/api/receipts/:id/split/percentage", auth, splitReceiptByPercentage);
+app.post(
+  "/api/receipts/:id/split/item-percentage",
+  auth,
+  splitReceiptByItemPercentage
+);
+app.post("/api/receipts/:id/split/items", auth, splitReceiptByItems);
+app.post("/api/receipts/:id/settle", auth, markReceiptSettled);
 
 // Error handling middleware
 app.use((err, req, res, next) => {

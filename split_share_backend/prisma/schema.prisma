@@ -11,28 +11,69 @@ datasource db {
 }
 
 model User {
-  id        String    @id @default(uuid())
-  email     String    @unique
-  password  String
-  name      String
-  createdAt DateTime  @default(now())
-  updatedAt DateTime  @updatedAt
-  receipts  Receipt[]
+  id             String    @id @default(uuid())
+  email          String    @unique
+  password       String
+  name           String
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+  receipts       Receipt[]
+  groups         UserGroup[]
+  ownedGroups    Group[]
+  splits         Split[]
+}
+
+model Group {
+  id          String      @id @default(uuid())
+  name        String      @unique
+  description String?
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
+  ownerId     String
+  owner       User        @relation(fields: [ownerId], references: [id])
+  users       UserGroup[]
+  receipts    Receipt[]
+}
+
+model UserGroup {
+  userId    String
+  groupId   String
+  joinedAt  DateTime @default(now())
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  group     Group    @relation(fields: [groupId], references: [id], onDelete: Cascade)
+
+  @@id([userId, groupId])
 }
 
 model Receipt {
   id           String   @id @default(uuid())
   userId       String
+  groupId      String
   merchantName String
   date         DateTime
   subtotal     Float
   tax          Float
   tip          Float?
   total        Float
+  status       ReceiptStatus @default(INITIAL)
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
   user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  group        Group    @relation(fields: [groupId], references: [id], onDelete: Cascade)
   items        Item[]
+  splits       Split[]
+}
+
+enum ReceiptStatus {
+  INITIAL
+  ASSIGNED_SPLIT
+  SETTLED
+}
+
+enum SplitType {
+  PERCENTAGE_TOTAL
+  PERCENTAGE_PER_ITEM
+  ITEM_BASED
 }
 
 model Item {
@@ -45,4 +86,33 @@ model Item {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
   receipt   Receipt  @relation(fields: [receiptId], references: [id], onDelete: Cascade)
+  itemSplits ItemSplit[]
+}
+
+model Split {
+  id           String    @id @default(uuid())
+  receiptId    String
+  userId       String
+  amount       Float
+  splitType    SplitType
+  percentage   Float?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+  isPaid       Boolean   @default(false)
+  metadata     Json?
+  receipt      Receipt   @relation(fields: [receiptId], references: [id], onDelete: Cascade)
+  user         User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  itemSplits   ItemSplit[]
+}
+
+model ItemSplit {
+  id        String   @id @default(uuid())
+  splitId   String
+  itemId    String
+  percentage Float?
+  amount    Float
+  split     Split    @relation(fields: [splitId], references: [id], onDelete: Cascade)
+  item      Item     @relation(fields: [itemId], references: [id], onDelete: Cascade)
+
+  @@unique([splitId, itemId])
 }
