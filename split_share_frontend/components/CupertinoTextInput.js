@@ -2,79 +2,98 @@ import React, { useState } from "react";
 import {
   View,
   TextInput,
-  Text,
   StyleSheet,
   TouchableOpacity,
+  Animated,
 } from "react-native";
-import { Icon } from "@rneui/themed";
-import { Colors, TextStyles } from "./CupertinoStyles";
+import { Text } from "@rneui/themed";
+import { Colors, TextStyles, InputStyles } from "./CupertinoStyles";
 
 export default function CupertinoTextInput({
   label,
+  error,
   value,
   onChangeText,
   placeholder,
+  containerStyle,
+  leftIcon,
+  rightIcon,
   secureTextEntry,
-  keyboardType,
-  autoCapitalize = "none",
-  error,
-  style,
-  inputStyle,
-  labelStyle,
-  multiline = false,
-  numberOfLines = 1,
+  ...props
 }) {
-  const [isPasswordVisible, setIsPasswordVisible] = useState(false);
   const [isFocused, setIsFocused] = useState(false);
-
-  const togglePasswordVisibility = () => {
-    setIsPasswordVisible(!isPasswordVisible);
-  };
+  const [labelAnim] = useState(new Animated.Value(value ? 1 : 0));
 
   const handleFocus = () => {
     setIsFocused(true);
+    animateLabel(1);
   };
 
   const handleBlur = () => {
     setIsFocused(false);
+    if (!value) {
+      animateLabel(0);
+    }
+  };
+
+  const animateLabel = (toValue) => {
+    Animated.timing(labelAnim, {
+      toValue,
+      duration: 200,
+      useNativeDriver: false,
+    }).start();
+  };
+
+  const labelStyle = {
+    position: "absolute",
+    left: leftIcon ? 52 : 16,
+    top: labelAnim.interpolate({
+      inputRange: [0, 1],
+      outputRange: [14, -8],
+    }),
+    fontSize: labelAnim.interpolate({
+      inputRange: [0, 1],
+      outputRange: [16, 12],
+    }),
+    color: labelAnim.interpolate({
+      inputRange: [0, 1],
+      outputRange: [Colors.gray, Colors.primary],
+    }),
+    backgroundColor: Colors.white,
+    paddingHorizontal: 4,
   };
 
   return (
-    <View style={[styles.container, style]}>
-      {label && <Text style={[styles.label, labelStyle]}>{label}</Text>}
+    <View style={[styles.container, containerStyle]}>
+      {label && <Animated.Text style={labelStyle}>{label}</Animated.Text>}
+
       <View
         style={[
           styles.inputContainer,
           isFocused && styles.inputContainerFocused,
           error && styles.inputContainerError,
         ]}>
+        {leftIcon && <View style={styles.iconContainer}>{leftIcon}</View>}
+
         <TextInput
+          style={[
+            styles.input,
+            leftIcon && styles.inputWithLeftIcon,
+            rightIcon && styles.inputWithRightIcon,
+          ]}
           value={value}
           onChangeText={onChangeText}
-          placeholder={placeholder}
-          placeholderTextColor={Colors.gray}
-          secureTextEntry={secureTextEntry && !isPasswordVisible}
-          keyboardType={keyboardType}
-          autoCapitalize={autoCapitalize}
-          style={[styles.input, inputStyle]}
           onFocus={handleFocus}
           onBlur={handleBlur}
-          multiline={multiline}
-          numberOfLines={numberOfLines}
+          placeholder={!isFocused ? placeholder : ""}
+          placeholderTextColor={Colors.gray}
+          secureTextEntry={secureTextEntry}
+          {...props}
         />
-        {secureTextEntry && (
-          <TouchableOpacity
-            onPress={togglePasswordVisibility}
-            style={styles.visibilityToggle}>
-            <Icon
-              name={isPasswordVisible ? "visibility" : "visibility-off"}
-              type="material"
-              size={20}
-              color={Colors.gray}
-            />
-          </TouchableOpacity>
-        )}
+
+        {rightIcon && <View style={styles.iconContainer}>{rightIcon}</View>}
       </View>
+
       {error && <Text style={styles.errorText}>{error}</Text>}
     </View>
   );
@@ -84,18 +103,14 @@ const styles = StyleSheet.create({
   container: {
     marginBottom: 16,
   },
-  label: {
-    ...TextStyles.subhead,
-    color: Colors.gray,
-    marginBottom: 8,
-  },
   inputContainer: {
     flexDirection: "row",
     alignItems: "center",
     borderWidth: 1,
     borderColor: Colors.lightGray,
-    borderRadius: 10,
+    borderRadius: 12,
     backgroundColor: Colors.white,
+    minHeight: 48,
   },
   inputContainerFocused: {
     borderColor: Colors.primary,
@@ -103,19 +118,28 @@ const styles = StyleSheet.create({
   inputContainerError: {
     borderColor: Colors.danger,
   },
+  iconContainer: {
+    paddingHorizontal: 12,
+    justifyContent: "center",
+    alignItems: "center",
+  },
   input: {
     flex: 1,
-    height: 44,
+    fontSize: 16,
+    color: Colors.black,
+    paddingVertical: 12,
     paddingHorizontal: 16,
-    color: Colors.dark,
-    fontSize: 17,
   },
-  visibilityToggle: {
-    padding: 10,
+  inputWithLeftIcon: {
+    paddingLeft: 0,
+  },
+  inputWithRightIcon: {
+    paddingRight: 0,
   },
   errorText: {
+    ...TextStyles.caption2,
     color: Colors.danger,
-    fontSize: 12,
     marginTop: 4,
+    marginLeft: 16,
   },
 });

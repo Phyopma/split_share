@@ -9,16 +9,12 @@ const {
   getUserReceipts,
   deleteReceipt,
   updateReceipt,
-  getGroupReceipts,
-  splitReceiptByPercentage,
-  splitReceiptByItemPercentage,
-  splitReceiptByItems,
-  markReceiptSettled,
 } = require("./controllers/receiptController");
 const {
   register,
   login,
   getCurrentUser,
+  refreshToken,
 } = require("./controllers/authController");
 const {
   createGroup,
@@ -35,8 +31,16 @@ const { uploadAndResize } = require("./middleware/upload");
 const app = express();
 const port = process.env.PORT || 3000;
 
-// Middleware
-app.use(cors());
+// More permissive CORS configuration for development
+app.use(
+  cors({
+    origin: true, // Allow all origins in development
+    credentials: true,
+    methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+    allowedHeaders: ["Content-Type", "Authorization"],
+  })
+);
+
 app.use(express.json({ limit: "10mb" }));
 app.use(express.urlencoded({ extended: true, limit: "10mb" }));
 
@@ -44,6 +48,7 @@ app.use(express.urlencoded({ extended: true, limit: "10mb" }));
 app.post("/api/auth/register", register);
 app.post("/api/auth/login", login);
 app.get("/api/auth/user", auth, getCurrentUser);
+app.post("/api/auth/refresh-token", auth, refreshToken);
 
 // Receipt Routes
 app.post(
@@ -64,47 +69,37 @@ app.get("/api/groups/:id", auth, getGroupById);
 app.post("/api/groups/:id/invite", auth, inviteUserToGroup);
 app.delete("/api/groups/:groupId/users/:userId", auth, removeUserFromGroup);
 app.delete("/api/groups/:id", auth, deleteGroup);
-
-// Group Receipts Routes
-app.get("/api/groups/:groupId/receipts", auth, getGroupReceipts);
 app.get("/api/groups/:id/summary", auth, getGroupSummary);
-
-// Receipt Splitting Routes
-app.post("/api/receipts/:id/split/percentage", auth, splitReceiptByPercentage);
-app.post(
-  "/api/receipts/:id/split/item-percentage",
-  auth,
-  splitReceiptByItemPercentage
-);
-app.post("/api/receipts/:id/split/items", auth, splitReceiptByItems);
-app.post("/api/receipts/:id/settle", auth, markReceiptSettled);
 
 // Error handling middleware
 app.use((err, req, res, next) => {
-  console.error(err.stack);
-  res.status(500).json({
+  console.error("Error:", err);
+  res.status(err.status || 500).json({
     success: false,
-    message: err.message || "Something went wrong on the server",
+    message: err.message || "Internal server error",
   });
 });
 
-// Start server
-app.listen(port, () => {
-  console.log(`Server running on port ${port}`);
+// Improved error handling for the server startup
+const startServer = async () => {
+  try {
+    // Test database connection first
+    await prisma.$connect();
+    console.log("Database connection established successfully");
 
-  // Test database connection
-  prisma
-    .$connect()
-    .then(() => {
-      console.log("Database connection established successfully");
-    })
-    .catch((error) => {
-      console.error("Error connecting to database:", error);
-      process.exit(1);
+    // Then start the server
+    app.listen(port, "0.0.0.0", () => {
+      console.log(`Server running on port ${port}`);
     });
-});
+  } catch (error) {
+    console.error("Error starting server:", error);
+    process.exit(1);
+  }
+};
 
-// Handle graceful shutdown and close Prisma client
+startServer();
+
+// Handle graceful shutdown
 process.on("SIGINT", async () => {
   await prisma.$disconnect();
   process.exit(0);

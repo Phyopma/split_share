@@ -3,534 +3,343 @@ import {
   View,
   StyleSheet,
   ScrollView,
-  TextInput,
-  Alert,
   TouchableOpacity,
+  Alert,
+  KeyboardAvoidingView,
   Platform,
 } from "react-native";
-import { Text, Button, Card, ListItem, Icon, Divider } from "@rneui/themed";
-import DateTimePicker from "@react-native-community/datetimepicker";
+import { Text, Button, Icon, Input, ListItem } from "@rneui/themed";
 import { useReceipts } from "../contexts/ReceiptContext";
+import { Colors, TextStyles } from "../components/CupertinoStyles";
+import CupertinoTextInput from "../components/CupertinoTextInput";
 
 export default function ReceiptConfirmationScreen({ route, navigation }) {
-  const { receipt: initialReceipt, isEditing: initialIsEditing } = route.params;
+  const { receipt: initialReceipt, groupId } = route.params;
   const [receipt, setReceipt] = useState(initialReceipt);
-  const [isEditing, setIsEditing] = useState(initialIsEditing || false);
+  const [loading, setLoading] = useState(false);
   const { saveReceipt } = useReceipts();
-  const [saving, setSaving] = useState(false);
+  const [totalCalculated, setTotalCalculated] = useState(0);
 
-  // Ensure numeric values are properly set on component load
   useEffect(() => {
-    // Make sure all numeric values are proper numbers, not strings
-    const formattedReceipt = {
-      ...initialReceipt,
-      // Preserve the id if it exists (for updates)
-      id: initialReceipt.id || null,
-      subtotal: parseFloat(initialReceipt.subtotal) || 0,
-      tax: parseFloat(initialReceipt.tax) || 0,
-      tip: parseFloat(initialReceipt.tip) || 0,
-      total: parseFloat(initialReceipt.total) || 0,
-      items: initialReceipt.items.map((item) => ({
-        ...item,
-        quantity: parseFloat(item.quantity) || 0,
-        unitPrice: parseFloat(item.unitPrice) || 0,
-        total: parseFloat(item.total) || 0,
-      })),
-    };
+    calculateTotal();
+  }, [receipt.items, receipt.tax, receipt.tip]);
 
-    // Update the formatted receipt
-    setReceipt(formattedReceipt);
-  }, []);
-
-  const handleItemChange = (index, field, value) => {
-    const updatedItems = [...receipt.items];
-
-    if (field === "name") {
-      updatedItems[index] = { ...updatedItems[index], [field]: value };
-    } else if (field === "quantity" || field === "unitPrice") {
-      // Store the raw string input first
-      updatedItems[index] = { ...updatedItems[index], [field]: value };
-
-      // Only parse it to float for calculation if it's a valid number
-      const numericValue =
-        value === "" || value === "." ? 0 : parseFloat(value);
-
-      // Recalculate total based on current values
-      const qty =
-        field === "quantity" ? numericValue : updatedItems[index].quantity || 0;
-      const price =
-        field === "unitPrice"
-          ? numericValue
-          : updatedItems[index].unitPrice || 0;
-
-      updatedItems[index].total = parseFloat((qty * price).toFixed(2));
-    } else {
-      // For other numeric fields
-      const numericValue = parseFloat(value) || 0;
-      updatedItems[index] = { ...updatedItems[index], [field]: numericValue };
-    }
-
-    const updatedReceipt = { ...receipt, items: updatedItems };
-
-    // Recalculate subtotal whenever items change
-    const subtotal = calculateSubtotal(updatedItems);
-    updatedReceipt.subtotal = subtotal;
-
-    // Recalculate total
-    updatedReceipt.total = calculateTotal(
-      subtotal,
-      updatedReceipt.tax,
-      updatedReceipt.tip
+  const calculateTotal = () => {
+    const subtotal = receipt.items.reduce(
+      (sum, item) => sum + item.quantity * item.unitPrice,
+      0
     );
-
-    setReceipt(updatedReceipt);
+    const total = subtotal + (receipt.tax || 0) + (receipt.tip || 0);
+    setTotalCalculated(total);
+    setReceipt((prev) => ({ ...prev, subtotal, total }));
   };
 
-  const handleGeneralChange = (field, value) => {
-    if (field === "merchantName" || field === "date") {
-      setReceipt({ ...receipt, [field]: value });
-    } else {
-      // For numeric fields like tax, tip, etc.
-      const numericValue = parseFloat(value) || 0;
-      const updatedReceipt = { ...receipt, [field]: numericValue };
-
-      // Recalculate total whenever tax or tip changes
-      if (field === "tax" || field === "tip") {
-        updatedReceipt.total = calculateTotal(
-          updatedReceipt.subtotal,
-          field === "tax" ? numericValue : updatedReceipt.tax,
-          field === "tip" ? numericValue : updatedReceipt.tip
-        );
-      }
-
-      setReceipt(updatedReceipt);
+  const handleSave = async () => {
+    setLoading(true);
+    try {
+      const savedReceipt = await saveReceipt({ ...receipt, groupId });
+      navigation.navigate("ReceiptSplit", {
+        receipt: savedReceipt,
+        groupId,
+      });
+    } catch (error) {
+      Alert.alert("Error", "Failed to save receipt");
+    } finally {
+      setLoading(false);
     }
   };
 
-  const handleDateChange = (event, selectedDate) => {
-    if (selectedDate) {
-      setReceipt({ ...receipt, date: selectedDate.toISOString() });
+  const updateItem = (index, field, value) => {
+    const newItems = [...receipt.items];
+    newItems[index] = { ...newItems[index], [field]: parseFloat(value) || 0 };
+    if (field === "unitPrice" || field === "quantity") {
+      newItems[index].total =
+        newItems[index].unitPrice * newItems[index].quantity;
     }
-  };
-
-  // Pure function to calculate subtotal from items
-  const calculateSubtotal = (items = receipt.items) => {
-    return parseFloat(
-      items
-        .reduce((sum, item) => {
-          const itemTotal =
-            typeof item.total === "string" &&
-            (item.total === "" || item.total === ".")
-              ? 0
-              : parseFloat(item.total) || 0;
-          return sum + itemTotal;
-        }, 0)
-        .toFixed(2)
-    );
-  };
-
-  // Pure function to calculate total
-  const calculateTotal = (subtotal, tax, tip) => {
-    const taxValue = parseFloat(tax) || 0;
-    const tipValue = parseFloat(tip) || 0;
-    return parseFloat((subtotal + taxValue + tipValue).toFixed(2));
+    setReceipt({ ...receipt, items: newItems });
   };
 
   const addItem = () => {
-    const newItem = {
-      name: "New Item",
-      quantity: 1,
-      unitPrice: 0,
-      total: 0,
-    };
-
-    const updatedItems = [...receipt.items, newItem];
-    const subtotal = calculateSubtotal(updatedItems);
-
     setReceipt({
       ...receipt,
-      items: updatedItems,
-      subtotal: subtotal,
-      total: calculateTotal(subtotal, receipt.tax, receipt.tip),
+      items: [
+        ...receipt.items,
+        { name: "", quantity: 1, unitPrice: 0, total: 0 },
+      ],
     });
   };
 
   const removeItem = (index) => {
-    const updatedItems = [...receipt.items];
-    updatedItems.splice(index, 1);
-
-    const subtotal = calculateSubtotal(updatedItems);
-
-    setReceipt({
-      ...receipt,
-      items: updatedItems,
-      subtotal: subtotal,
-      total: calculateTotal(subtotal, receipt.tax, receipt.tip),
-    });
+    const newItems = receipt.items.filter((_, i) => i !== index);
+    setReceipt({ ...receipt, items: newItems });
   };
 
-  const confirmReceipt = async () => {
-    // Ensure all numeric values are properly parsed
-    const finalItems = receipt.items.map((item) => {
-      const quantity = parseFloat(item.quantity) || 0;
-      const unitPrice = parseFloat(item.unitPrice) || 0;
-      return {
-        // Preserve item id if it exists
-        id: item.id || null,
-        name: item.name,
-        quantity: quantity,
-        unitPrice: unitPrice,
-        total: parseFloat((quantity * unitPrice).toFixed(2)),
-      };
-    });
-
-    // Ensure all calculations are final and accurate
-    const subtotal = calculateSubtotal(finalItems);
-    const tax = parseFloat(receipt.tax) || 0;
-    const tip = parseFloat(receipt.tip) || 0;
-    const total = calculateTotal(subtotal, tax, tip);
-
-    const finalReceipt = {
-      // Preserve existing ID if available (update case)
-      id: receipt.id || null,
-      ...receipt,
-      subtotal: subtotal,
-      tax: tax,
-      tip: tip,
-      total: total,
-      items: finalItems,
-    };
-
-    // Determine operation type based on receipt ID
-    const operationType = finalReceipt.id ? "Update" : "Create";
-
-    Alert.alert(
-      `${operationType} Receipt`,
-      `${operationType} this receipt and proceed?`,
-      [
-        {
-          text: "Cancel",
-          style: "cancel",
-        },
-        {
-          text: "Confirm",
-          onPress: async () => {
-            try {
-              setSaving(true);
-
-              // Save receipt using the context function, which handles both create and update
-              const result = await saveReceipt(finalReceipt);
-
-              if (result.success) {
-                // Navigate back to the home screen
-                navigation.navigate("Home");
-              } else {
-                Alert.alert(
-                  "Error",
-                  result.message || "Failed to save receipt"
-                );
-              }
-            } catch (error) {
-              console.error("Error saving receipt:", error);
-              Alert.alert("Error", "An unexpected error occurred");
-            } finally {
-              setSaving(false);
-            }
-          },
-        },
-      ]
-    );
-  };
+  const renderItem = (item, index) => (
+    <ListItem key={index} containerStyle={styles.itemContainer}>
+      <ListItem.Content>
+        <CupertinoTextInput
+          placeholder="Item name"
+          value={item.name}
+          onChangeText={(value) => updateItem(index, "name", value)}
+          containerStyle={styles.itemNameInput}
+        />
+        <View style={styles.itemDetails}>
+          <CupertinoTextInput
+            placeholder="Qty"
+            value={item.quantity.toString()}
+            onChangeText={(value) => updateItem(index, "quantity", value)}
+            keyboardType="numeric"
+            containerStyle={styles.quantityInput}
+          />
+          <CupertinoTextInput
+            placeholder="Price"
+            value={item.unitPrice.toFixed(2)}
+            onChangeText={(value) => updateItem(index, "unitPrice", value)}
+            keyboardType="numeric"
+            containerStyle={styles.priceInput}
+            leftIcon={<Text>$</Text>}
+          />
+          <Text style={styles.itemTotal}>
+            ${(item.quantity * item.unitPrice).toFixed(2)}
+          </Text>
+        </View>
+      </ListItem.Content>
+      <TouchableOpacity
+        onPress={() => removeItem(index)}
+        style={styles.removeButton}>
+        <Icon name="close" color={Colors.danger} />
+      </TouchableOpacity>
+    </ListItem>
+  );
 
   return (
-    <ScrollView style={styles.container}>
-      <Card containerStyle={styles.card}>
-        <View style={styles.headerRow}>
-          <Card.Title style={styles.title}>Confirm Receipt</Card.Title>
-          <Button
-            type="clear"
-            icon={<Icon name={isEditing ? "check" : "edit"} size={24} />}
-            onPress={() => setIsEditing(!isEditing)}
-          />
+    <KeyboardAvoidingView
+      behavior={Platform.OS === "ios" ? "padding" : "height"}
+      style={styles.container}>
+      <ScrollView style={styles.scrollView}>
+        <View style={styles.header}>
+          <Text h4 style={styles.title}>
+            Review Receipt
+          </Text>
+          <Text style={styles.subtitle}>
+            Please verify the details extracted from your receipt
+          </Text>
         </View>
 
         <View style={styles.merchantSection}>
-          {isEditing ? (
-            <TextInput
-              style={styles.editInput}
-              value={receipt.merchantName}
-              onChangeText={(text) => handleGeneralChange("merchantName", text)}
-              placeholder="Merchant Name"
-            />
-          ) : (
-            <Text style={styles.merchantName}>{receipt.merchantName}</Text>
-          )}
-
-          {isEditing ? (
-            <DateTimePicker
-              value={new Date(receipt.date)}
-              mode="date"
-              display="default"
-              onChange={handleDateChange}
-              style={styles.datePicker}
-              themeVariant="light"
-              textColor="#000000"
-            />
-          ) : (
-            <Text style={styles.date}>
-              {new Date(receipt.date).toLocaleDateString()}
-            </Text>
-          )}
+          <CupertinoTextInput
+            label="Merchant"
+            placeholder="Merchant name"
+            value={receipt.merchantName}
+            onChangeText={(value) =>
+              setReceipt({ ...receipt, merchantName: value })
+            }
+            leftIcon={
+              <Icon
+                name="storefront"
+                type="material"
+                size={24}
+                color={Colors.gray}
+              />
+            }
+          />
+          <CupertinoTextInput
+            label="Date"
+            placeholder="Receipt date"
+            value={new Date(receipt.date).toLocaleDateString()}
+            onChangeText={(value) =>
+              setReceipt({ ...receipt, date: new Date(value).toISOString() })
+            }
+            leftIcon={
+              <Icon
+                name="calendar"
+                type="material"
+                size={24}
+                color={Colors.gray}
+              />
+            }
+          />
         </View>
 
-        <Divider style={styles.divider} />
-
-        <View style={styles.section}>
+        <View style={styles.itemsSection}>
           <View style={styles.sectionHeader}>
             <Text style={styles.sectionTitle}>Items</Text>
-            {isEditing && (
-              <Button
-                type="clear"
-                icon={<Icon name="add" size={24} />}
-                onPress={addItem}
-              />
-            )}
+            <Button
+              type="clear"
+              icon={{
+                name: "add",
+                color: Colors.primary,
+              }}
+              onPress={addItem}
+              titleStyle={styles.addButtonTitle}
+            />
           </View>
-
-          <View style={styles.itemHeader}>
-            <Text style={[styles.itemCol, { flex: 2 }]}>Item</Text>
-            <Text style={styles.itemCol}>Qty</Text>
-            <Text style={styles.itemCol}>Price</Text>
-            <Text style={styles.itemCol}>Total</Text>
-            {isEditing && <Text style={{ width: 40 }}></Text>}
-          </View>
-
-          {receipt.items.map((item, index) => (
-            <View key={index} style={styles.itemRow}>
-              {isEditing ? (
-                <>
-                  <TextInput
-                    style={[styles.editInput, { flex: 2 }]}
-                    value={item.name}
-                    onChangeText={(text) =>
-                      handleItemChange(index, "name", text)
-                    }
-                    placeholder="Item name"
-                  />
-                  <TextInput
-                    style={styles.editInput}
-                    value={String(item.quantity || "")}
-                    onChangeText={(text) =>
-                      handleItemChange(index, "quantity", text)
-                    }
-                    keyboardType="decimal-pad"
-                    placeholder="Qty"
-                  />
-                  <TextInput
-                    style={styles.editInput}
-                    value={String(item.unitPrice || "")}
-                    onChangeText={(text) =>
-                      handleItemChange(index, "unitPrice", text)
-                    }
-                    keyboardType="decimal-pad"
-                    placeholder="Price"
-                  />
-                  <Text style={styles.itemCol}>
-                    ${parseFloat(item.total || 0).toFixed(2)}
-                  </Text>
-                  <TouchableOpacity onPress={() => removeItem(index)}>
-                    <Icon name="close" size={20} color="red" />
-                  </TouchableOpacity>
-                </>
-              ) : (
-                <>
-                  <Text style={[styles.itemCol, { flex: 2 }]}>{item.name}</Text>
-                  <Text style={styles.itemCol}>{item.quantity || 0}</Text>
-                  <Text style={styles.itemCol}>
-                    ${parseFloat(item.unitPrice || 0).toFixed(2)}
-                  </Text>
-                  <Text style={styles.itemCol}>
-                    ${parseFloat(item.total || 0).toFixed(2)}
-                  </Text>
-                </>
-              )}
-            </View>
-          ))}
+          {receipt.items.map((item, index) => renderItem(item, index))}
         </View>
-
-        <Divider style={styles.divider} />
 
         <View style={styles.totalsSection}>
           <View style={styles.totalRow}>
-            <Text>Subtotal:</Text>
-            <Text>${receipt.subtotal.toFixed(2)}</Text>
+            <Text style={styles.totalLabel}>Subtotal</Text>
+            <Text style={styles.totalValue}>
+              ${receipt.subtotal.toFixed(2)}
+            </Text>
           </View>
-
           <View style={styles.totalRow}>
-            <Text>Tax:</Text>
-            {isEditing ? (
-              <TextInput
-                style={styles.editInput}
-                value={String(receipt.tax)}
-                onChangeText={(text) => handleGeneralChange("tax", text)}
-                keyboardType="numeric"
-                placeholder="0.00"
-              />
-            ) : (
-              <Text>${receipt.tax.toFixed(2)}</Text>
-            )}
+            <Text style={styles.totalLabel}>Tax</Text>
+            <CupertinoTextInput
+              value={receipt.tax?.toString() || "0"}
+              onChangeText={(value) =>
+                setReceipt({ ...receipt, tax: parseFloat(value) || 0 })
+              }
+              keyboardType="numeric"
+              containerStyle={styles.taxInput}
+              leftIcon={<Text>$</Text>}
+            />
           </View>
-
           <View style={styles.totalRow}>
-            <Text>Tip:</Text>
-            {isEditing ? (
-              <TextInput
-                style={styles.editInput}
-                value={String(receipt.tip || 0)}
-                onChangeText={(text) => handleGeneralChange("tip", text)}
-                keyboardType="numeric"
-                placeholder="0.00"
-              />
-            ) : (
-              <Text>${(receipt.tip || 0).toFixed(2)}</Text>
-            )}
+            <Text style={styles.totalLabel}>Tip</Text>
+            <CupertinoTextInput
+              value={receipt.tip?.toString() || "0"}
+              onChangeText={(value) =>
+                setReceipt({ ...receipt, tip: parseFloat(value) || 0 })
+              }
+              keyboardType="numeric"
+              containerStyle={styles.tipInput}
+              leftIcon={<Text>$</Text>}
+            />
           </View>
-
           <View style={styles.totalRow}>
-            <Text style={styles.totalLabel}>Total:</Text>
-            <Text style={styles.totalAmount}>${receipt.total.toFixed(2)}</Text>
+            <Text style={[styles.totalLabel, styles.finalTotal]}>Total</Text>
+            <Text style={[styles.totalValue, styles.finalTotal]}>
+              ${receipt.total.toFixed(2)}
+            </Text>
           </View>
         </View>
+      </ScrollView>
 
+      <View style={styles.footer}>
         <Button
-          title="Confirm Receipt"
-          containerStyle={styles.confirmButton}
-          buttonStyle={styles.primaryButton}
-          onPress={confirmReceipt}
-          loading={saving}
-          disabled={saving}
+          title="Continue to Split"
+          loading={loading}
+          onPress={handleSave}
+          buttonStyle={styles.continueButton}
+          containerStyle={styles.continueButtonContainer}
         />
-      </Card>
-    </ScrollView>
+      </View>
+    </KeyboardAvoidingView>
   );
 }
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: "#f5f5f5",
+    backgroundColor: Colors.white,
   },
-  card: {
-    borderRadius: 10,
-    padding: 15,
-    margin: 10,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 2,
+  scrollView: {
+    flex: 1,
   },
-  headerRow: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    marginBottom: 10,
+  header: {
+    padding: 20,
+    backgroundColor: Colors.white,
   },
   title: {
-    fontSize: 20,
-    textAlign: "left",
-    marginBottom: 0,
+    ...TextStyles.title2,
+    marginBottom: 8,
+  },
+  subtitle: {
+    ...TextStyles.subhead,
+    color: Colors.gray,
   },
   merchantSection: {
-    marginBottom: 15,
+    padding: 20,
+    backgroundColor: Colors.white,
+    borderBottomWidth: 1,
+    borderBottomColor: Colors.lightGray,
   },
-  merchantName: {
-    fontSize: 18,
-    fontWeight: "600",
-    marginBottom: 5,
-  },
-  date: {
-    color: "#666",
-    fontSize: 14,
-  },
-  divider: {
-    marginVertical: 15,
-    backgroundColor: "#e0e0e0",
-  },
-  section: {
-    marginBottom: 15,
+  itemsSection: {
+    padding: 20,
   },
   sectionHeader: {
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
-    marginBottom: 10,
+    marginBottom: 16,
   },
   sectionTitle: {
-    fontSize: 16,
-    fontWeight: "bold",
+    ...TextStyles.headline,
   },
-  itemHeader: {
-    flexDirection: "row",
-    paddingVertical: 8,
-    borderBottomWidth: 1,
-    borderBottomColor: "#e0e0e0",
-    marginBottom: 5,
+  itemContainer: {
+    backgroundColor: Colors.white,
+    borderRadius: 12,
+    marginBottom: 12,
+    padding: 16,
+    shadowColor: Colors.black,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 2,
   },
-  itemRow: {
+  itemNameInput: {
+    marginBottom: 8,
+  },
+  itemDetails: {
     flexDirection: "row",
     alignItems: "center",
-    paddingVertical: 10,
-    borderBottomWidth: 1,
-    borderBottomColor: "#f0f0f0",
+    justifyContent: "space-between",
   },
-  itemCol: {
-    flex: 1,
-    paddingHorizontal: 4,
+  quantityInput: {
+    width: "25%",
   },
-  editInput: {
-    flex: 1,
-    borderBottomWidth: 1,
-    borderBottomColor: "#3498db",
-    paddingVertical: 4,
-    paddingHorizontal: 4,
-    marginHorizontal: 4,
-    fontSize: 14,
+  priceInput: {
+    width: "35%",
+  },
+  itemTotal: {
+    ...TextStyles.headline,
+    width: "30%",
+    textAlign: "right",
+  },
+  removeButton: {
+    padding: 8,
   },
   totalsSection: {
-    marginTop: 10,
+    padding: 20,
+    backgroundColor: Colors.white,
+    borderTopWidth: 1,
+    borderTopColor: Colors.lightGray,
   },
   totalRow: {
     flexDirection: "row",
     justifyContent: "space-between",
-    marginVertical: 5,
+    alignItems: "center",
+    marginBottom: 16,
   },
   totalLabel: {
-    fontWeight: "bold",
-    fontSize: 16,
+    ...TextStyles.headline,
   },
-  totalAmount: {
-    fontWeight: "bold",
-    fontSize: 16,
-    color: "#2089dc",
+  totalValue: {
+    ...TextStyles.headline,
   },
-  confirmButton: {
-    marginTop: 20,
-    borderRadius: 8,
-    overflow: "hidden",
+  taxInput: {
+    width: "40%",
   },
-  primaryButton: {
+  tipInput: {
+    width: "40%",
+  },
+  finalTotal: {
+    ...TextStyles.title3,
+    fontWeight: "600",
+  },
+  footer: {
+    padding: 20,
+    backgroundColor: Colors.white,
+    borderTopWidth: 1,
+    borderTopColor: Colors.lightGray,
+  },
+  continueButton: {
+    borderRadius: 12,
     paddingVertical: 12,
-    backgroundColor: "#2089dc",
   },
-  datePickerContainer: {
-    alignSelf: "flex-start",
-    marginVertical: 5,
-    borderBottomWidth: 1,
-    borderBottomColor: "#3498db",
-  },
-  datePicker: {
-    paddingVertical: 4,
-    marginLeft: -20,
+  continueButtonContainer: {
+    width: "100%",
   },
 });

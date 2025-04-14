@@ -29,6 +29,12 @@ const register = async (req, res) => {
         email,
         password: hashedPassword,
       },
+      select: {
+        id: true,
+        name: true,
+        email: true,
+        createdAt: true,
+      },
     });
 
     // Generate JWT token
@@ -39,11 +45,7 @@ const register = async (req, res) => {
     res.status(201).json({
       success: true,
       data: {
-        user: {
-          id: user.id,
-          name: user.name,
-          email: user.email,
-        },
+        user,
         token,
       },
     });
@@ -64,6 +66,13 @@ const login = async (req, res) => {
     // Find user by email
     const user = await prisma.user.findUnique({
       where: { email },
+      select: {
+        id: true,
+        name: true,
+        email: true,
+        password: true,
+        createdAt: true,
+      },
     });
 
     if (!user) {
@@ -82,6 +91,9 @@ const login = async (req, res) => {
       });
     }
 
+    // Remove password from response
+    const { password: _, ...userWithoutPassword } = user;
+
     // Generate JWT token
     const token = jwt.sign({ userId: user.id }, process.env.JWT_SECRET, {
       expiresIn: "7d",
@@ -90,11 +102,7 @@ const login = async (req, res) => {
     res.status(200).json({
       success: true,
       data: {
-        user: {
-          id: user.id,
-          name: user.name,
-          email: user.email,
-        },
+        user: userWithoutPassword,
         token,
       },
     });
@@ -110,14 +118,38 @@ const login = async (req, res) => {
 // Get current user
 const getCurrentUser = async (req, res) => {
   try {
+    // User data is already attached by auth middleware
+    const user = await prisma.user.findUnique({
+      where: { id: req.user.id },
+      select: {
+        id: true,
+        name: true,
+        email: true,
+        createdAt: true,
+        groups: {
+          select: {
+            group: {
+              select: {
+                id: true,
+                name: true,
+              },
+            },
+          },
+        },
+      },
+    });
+
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: "User not found",
+      });
+    }
+
     res.status(200).json({
       success: true,
       data: {
-        user: {
-          id: req.user.id,
-          name: req.user.name,
-          email: req.user.email,
-        },
+        user,
       },
     });
   } catch (error) {
@@ -129,8 +161,66 @@ const getCurrentUser = async (req, res) => {
   }
 };
 
+// Refresh token
+const refreshToken = async (req, res) => {
+  try {
+    const { token } = req;
+    if (!token) {
+      return res.status(401).json({
+        success: false,
+        message: "No token provided",
+      });
+    }
+
+    try {
+      const decoded = jwt.verify(token, process.env.JWT_SECRET);
+      const user = await prisma.user.findUnique({
+        where: { id: decoded.userId },
+        select: {
+          id: true,
+          name: true,
+          email: true,
+          createdAt: true,
+        },
+      });
+
+      if (!user) {
+        return res.status(401).json({
+          success: false,
+          message: "Invalid token",
+        });
+      }
+
+      // Generate new token
+      const newToken = jwt.sign({ userId: user.id }, process.env.JWT_SECRET, {
+        expiresIn: "7d",
+      });
+
+      res.status(200).json({
+        success: true,
+        data: {
+          user,
+          token: newToken,
+        },
+      });
+    } catch (err) {
+      return res.status(401).json({
+        success: false,
+        message: "Invalid token",
+      });
+    }
+  } catch (error) {
+    console.error("Refresh token error:", error);
+    res.status(500).json({
+      success: false,
+      message: error.message || "Token refresh failed",
+    });
+  }
+};
+
 module.exports = {
   register,
   login,
   getCurrentUser,
+  refreshToken,
 };

@@ -409,7 +409,7 @@ async function getGroupSummary(req, res) {
       });
     }
 
-    // Get all users in the group
+    // Get all users in the group with detailed receipt data
     const groupUsers = await prisma.userGroup.findMany({
       where: { groupId: id },
       include: {
@@ -423,11 +423,10 @@ async function getGroupSummary(req, res) {
       },
     });
 
-    // Get assigned_split receipts in the group
+    // Get all receipts in the group with detailed split info
     const receipts = await prisma.receipt.findMany({
       where: {
         groupId: id,
-        status: "ASSIGNED_SPLIT",
       },
       include: {
         user: {
@@ -446,17 +445,26 @@ async function getGroupSummary(req, res) {
                 email: true,
               },
             },
+            itemSplits: {
+              include: {
+                item: true,
+              },
+            },
           },
         },
+        items: true,
       },
+      orderBy: { createdAt: "desc" },
     });
 
     // Calculate summary data
     const userSummaries = {};
     const balances = {};
     let totalGroupExpense = 0;
+    let settledExpense = 0;
+    let pendingExpense = 0;
 
-    // Initialize summaries for all users
+    // Initialize summary data
     groupUsers.forEach((ug) => {
       const user = ug.user;
       userSummaries[user.id] = {
@@ -466,6 +474,9 @@ async function getGroupSummary(req, res) {
         totalOwed: 0,
         totalPaid: 0,
         netBalance: 0,
+        pendingOwed: 0,
+        settledOwed: 0,
+        receiptsUploaded: 0,
       };
 
       balances[user.id] = {};
@@ -476,23 +487,41 @@ async function getGroupSummary(req, res) {
       });
     });
 
-    // Calculate amounts for each receipt
+    // Group receipts by status
+    const receiptsByStatus = {
+      INITIAL: [],
+      ASSIGNED_SPLIT: [],
+      SETTLED: [],
+    };
+
+    // Calculate amounts and organize receipts
     receipts.forEach((receipt) => {
-      totalGroupExpense += receipt.total;
+      receiptsByStatus[receipt.status].push(receipt);
 
-      receipt.splits.forEach((split) => {
-        // Track how much each user owes
-        userSummaries[split.userId].totalOwed += split.amount;
+      // Update uploader's stats
+      userSummaries[receipt.userId].receiptsUploaded++;
 
-        // Track who owes whom (who paid vs who consumed)
-        if (receipt.userId !== split.userId) {
-          balances[split.userId][receipt.userId] += split.amount;
-          balances[receipt.userId][split.userId] -= split.amount;
-        }
-      });
+      if (receipt.status === "SETTLED") {
+        settledExpense += receipt.total;
+      } else if (receipt.status === "ASSIGNED_SPLIT") {
+        pendingExpense += receipt.total;
+        totalGroupExpense += receipt.total;
 
-      // Track how much each user paid (uploaded receipts)
-      userSummaries[receipt.userId].totalPaid += receipt.total;
+        receipt.splits.forEach((split) => {
+          // Track how much each user owes
+          userSummaries[split.userId].totalOwed += split.amount;
+          userSummaries[split.userId].pendingOwed += split.amount;
+
+          // Track who owes whom (who paid vs who consumed)
+          if (receipt.userId !== split.userId) {
+            balances[split.userId][receipt.userId] += split.amount;
+            balances[receipt.userId][split.userId] -= split.amount;
+          }
+        });
+
+        // Track how much each user paid (uploaded receipts)
+        userSummaries[receipt.userId].totalPaid += receipt.total;
+      }
     });
 
     // Calculate net balance for each user
@@ -521,10 +550,42 @@ async function getGroupSummary(req, res) {
     const summaryData = {
       groupId: id,
       groupName: group.name,
-      totalExpense: totalGroupExpense,
-      receiptCount: receipts.length,
+      metrics: {
+        totalExpense: totalGroupExpense + settledExpense,
+        pendingExpense,
+        settledExpense,
+        receiptCounts: {
+          total: receipts.length,
+          initial: receiptsByStatus.INITIAL.length,
+          assignedSplit: receiptsByStatus.ASSIGNED_SPLIT.length,
+          settled: receiptsByStatus.SETTLED.length,
+        },
+      },
       userSummaries: Object.values(userSummaries),
       balances: simplifiedBalances,
+      receiptHistory: receipts.map((receipt) => ({
+        id: receipt.id,
+        merchantName: receipt.merchantName,
+        total: receipt.total,
+        date: receipt.date,
+        status: receipt.status,
+        uploader: {
+          id: receipt.user.id,
+          name: receipt.user.name,
+        },
+        splits: receipt.splits.map((split) => ({
+          userId: split.user.id,
+          userName: split.user.name,
+          amount: split.amount,
+          splitType: split.splitType,
+          isPaid: split.isPaid,
+          items: split.itemSplits?.map((is) => ({
+            name: is.item.name,
+            amount: is.amount,
+            percentage: is.percentage,
+          })),
+        })),
+      })),
     };
 
     res.status(200).json({

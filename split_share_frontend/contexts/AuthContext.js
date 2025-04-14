@@ -18,7 +18,7 @@ export const AuthProvider = ({ children }) => {
   const [token, setToken] = useState(null);
   const [loading, setLoading] = useState(true);
 
-  // Initialize - check if user is already logged in
+  // Initialize - check if user is logged in
   useEffect(() => {
     const loadStoredData = async () => {
       try {
@@ -28,8 +28,6 @@ export const AuthProvider = ({ children }) => {
         if (storedToken && storedUser) {
           setToken(storedToken);
           setUser(JSON.parse(storedUser));
-
-          // Configure axios default headers
           axios.defaults.headers.common[
             "Authorization"
           ] = `Bearer ${storedToken}`;
@@ -42,14 +40,16 @@ export const AuthProvider = ({ children }) => {
     };
 
     loadStoredData();
-  }, []); // Empty dependency array ensures this only runs once
+  }, []);
 
-  // Use useCallback for functions that are used in dependency arrays
   const isAuthenticated = useCallback(() => {
     return !!token;
   }, [token]);
 
-  // Register a new user
+  const handleAuthError = useCallback(async () => {
+    await logout();
+  }, []);
+
   const register = async (name, email, password) => {
     try {
       const response = await axios.post(`${API_BASE_URL}/api/auth/register`, {
@@ -60,15 +60,12 @@ export const AuthProvider = ({ children }) => {
 
       const { user: userData, token: authToken } = response.data.data;
 
-      // Save to state
       setUser(userData);
       setToken(authToken);
 
-      // Save to storage
       await AsyncStorage.setItem("token", authToken);
       await AsyncStorage.setItem("user", JSON.stringify(userData));
 
-      // Set auth header for future requests
       axios.defaults.headers.common["Authorization"] = `Bearer ${authToken}`;
 
       return { success: true };
@@ -86,7 +83,6 @@ export const AuthProvider = ({ children }) => {
     }
   };
 
-  // Login user
   const login = async (email, password) => {
     try {
       const response = await axios.post(`${API_BASE_URL}/api/auth/login`, {
@@ -96,15 +92,12 @@ export const AuthProvider = ({ children }) => {
 
       const { user: userData, token: authToken } = response.data.data;
 
-      // Save to state
       setUser(userData);
       setToken(authToken);
 
-      // Save to storage
       await AsyncStorage.setItem("token", authToken);
       await AsyncStorage.setItem("user", JSON.stringify(userData));
 
-      // Set auth header for future requests
       axios.defaults.headers.common["Authorization"] = `Bearer ${authToken}`;
 
       return { success: true };
@@ -119,18 +112,14 @@ export const AuthProvider = ({ children }) => {
     }
   };
 
-  // Logout user
   const logout = async () => {
     try {
-      // Clear state
       setUser(null);
       setToken(null);
 
-      // Clear storage
       await AsyncStorage.removeItem("token");
       await AsyncStorage.removeItem("user");
 
-      // Clear auth header
       delete axios.defaults.headers.common["Authorization"];
 
       return { success: true };
@@ -148,6 +137,7 @@ export const AuthProvider = ({ children }) => {
     login,
     logout,
     isAuthenticated,
+    handleAuthError,
   };
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

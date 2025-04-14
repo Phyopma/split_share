@@ -1,81 +1,152 @@
+import React from "react";
 import { NavigationContainer } from "@react-navigation/native";
 import { createNativeStackNavigator } from "@react-navigation/native-stack";
+import { createBottomTabNavigator } from "@react-navigation/bottom-tabs";
+import { SafeAreaProvider } from "react-native-safe-area-context";
 import { ThemeProvider } from "@rneui/themed";
-import { AuthProvider, useAuth } from "./contexts/AuthContext";
-import { ReceiptProvider } from "./contexts/ReceiptContext";
+import { Icon } from "@rneui/themed";
+
+// Screens
 import HomeScreen from "./screens/HomeScreen";
-import ReceiptDetailScreen from "./screens/ReceiptDetailScreen";
-import ReceiptConfirmationScreen from "./screens/ReceiptConfirmationScreen";
 import LoginScreen from "./screens/auth/LoginScreen";
 import RegisterScreen from "./screens/auth/RegisterScreen";
-import { Colors } from "./components/CupertinoStyles";
-import { useEffect, useState, useMemo } from "react"; // Added useMemo
+import ReceiptDetailScreen from "./screens/ReceiptDetailScreen";
+import ReceiptConfirmationScreen from "./screens/ReceiptConfirmationScreen";
+import ReceiptSplitScreen from "./screens/ReceiptSplitScreen";
+import GroupsScreen from "./screens/GroupsScreen";
+import GroupDetailScreen from "./screens/GroupDetailScreen";
+import CreateGroupScreen from "./screens/CreateGroupScreen";
+import SplashScreen from "./screens/SplashScreen";
+
+// Contexts
+import { AuthProvider, useAuth } from "./contexts/AuthContext";
+import { ReceiptProvider } from "./contexts/ReceiptContext";
 
 const Stack = createNativeStackNavigator();
+const Tab = createBottomTabNavigator();
+
+function MainTabNavigator() {
+  return (
+    <Tab.Navigator
+      screenOptions={({ route }) => ({
+        tabBarIcon: ({ focused, color, size }) => {
+          let iconName;
+
+          if (route.name === "HomeTab") {
+            iconName = "home";
+          } else if (route.name === "GroupsTab") {
+            iconName = "people";
+          }
+
+          return <Icon name={iconName} size={size} color={color} />;
+        },
+      })}>
+      <Tab.Screen
+        name="HomeTab"
+        component={HomeScreenStack}
+        options={{
+          title: "Home",
+          headerShown: false,
+        }}
+      />
+      <Tab.Screen
+        name="GroupsTab"
+        component={GroupsScreenStack}
+        options={{
+          title: "Groups",
+          headerShown: false,
+        }}
+      />
+    </Tab.Navigator>
+  );
+}
+
+function HomeScreenStack() {
+  return (
+    <Stack.Navigator>
+      <Stack.Screen
+        name="Home"
+        component={HomeScreen}
+        options={{
+          title: "Home",
+          headerLargeTitle: true,
+        }}
+      />
+      <Stack.Screen
+        name="ReceiptDetail"
+        component={ReceiptDetailScreen}
+        options={{
+          title: "Receipt Details",
+        }}
+      />
+    </Stack.Navigator>
+  );
+}
+
+function GroupsScreenStack() {
+  return (
+    <Stack.Navigator>
+      <Stack.Screen
+        name="Groups"
+        component={GroupsScreen}
+        options={{
+          title: "Groups",
+          headerLargeTitle: true,
+        }}
+      />
+      <Stack.Screen
+        name="GroupDetail"
+        component={GroupDetailScreen}
+        options={{
+          title: "Group Details",
+        }}
+      />
+      <Stack.Screen
+        name="CreateGroup"
+        component={CreateGroupScreen}
+        options={{
+          title: "Create Group",
+          presentation: "modal",
+        }}
+      />
+      <Stack.Screen
+        name="ReceiptConfirmation"
+        component={ReceiptConfirmationScreen}
+        options={{
+          title: "Review Receipt",
+          presentation: "modal",
+        }}
+      />
+      <Stack.Screen
+        name="ReceiptSplit"
+        component={ReceiptSplitScreen}
+        options={{
+          title: "Split Receipt",
+          presentation: "modal",
+        }}
+      />
+    </Stack.Navigator>
+  );
+}
 
 function AppNavigator() {
-  const { isAuthenticated, loading } = useAuth();
-  const [isReady, setIsReady] = useState(false);
-
-  // Use useEffect with a proper dependency array
-  useEffect(() => {
-    // Only update isReady when loading changes
-    if (!loading) {
-      setIsReady(true);
-    }
-  }, [loading]); // Specify dependency array correctly
-
-  // Use a memoized value for the initial route to prevent unnecessary navigation rerenders
-  const initialRouteName = useMemo(() => {
-    return isAuthenticated() ? "Home" : "Login";
-  }, [isAuthenticated]);
-
-  if (!isReady) {
-    return null; // or a loading screen
-  }
+  const { isAuthenticated } = useAuth();
 
   return (
     <NavigationContainer>
-      <Stack.Navigator
-        initialRouteName={initialRouteName}
-        screenOptions={{
-          headerStyle: {
-            backgroundColor: Colors.primary,
-          },
-          headerTintColor: Colors.white,
-          headerTitleStyle: {
-            fontWeight: "bold",
-          },
-          headerBackTitleVisible: false,
-        }}>
+      <Stack.Navigator>
+        <Stack.Screen
+          name="Splash"
+          component={SplashScreen}
+          options={{ headerShown: false }}
+        />
         {isAuthenticated() ? (
-          // Auth screens
-          <>
-            <Stack.Screen
-              name="Home"
-              component={HomeScreen}
-              options={{
-                title: "Split Share",
-                headerTitleAlign: "center",
-              }}
-            />
-            <Stack.Screen
-              name="ReceiptDetail"
-              component={ReceiptDetailScreen}
-              options={{ title: "Receipt Details" }}
-            />
-            <Stack.Screen
-              name="ReceiptConfirmation"
-              component={ReceiptConfirmationScreen}
-              options={{
-                title: "Confirm Receipt",
-                // Don't allow swiping back when in confirmation screen to prevent data loss
-                gestureEnabled: false,
-              }}
-            />
-          </>
+          <Stack.Screen
+            name="MainApp"
+            component={MainTabNavigator}
+            options={{ headerShown: false }}
+          />
         ) : (
-          // Auth screens
           <>
             <Stack.Screen
               name="Login"
@@ -95,14 +166,15 @@ function AppNavigator() {
 }
 
 export default function App() {
-  // Using memo here to ensure the app component is not rerendered unnecessarily
   return (
-    <ThemeProvider>
-      <AuthProvider>
-        <ReceiptProvider>
-          <AppNavigator />
-        </ReceiptProvider>
-      </AuthProvider>
-    </ThemeProvider>
+    <SafeAreaProvider>
+      <ThemeProvider>
+        <AuthProvider>
+          <ReceiptProvider>
+            <AppNavigator />
+          </ReceiptProvider>
+        </AuthProvider>
+      </ThemeProvider>
+    </SafeAreaProvider>
   );
 }

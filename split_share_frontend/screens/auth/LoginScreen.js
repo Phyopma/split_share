@@ -1,176 +1,257 @@
 import React, { useState } from "react";
 import {
   View,
-  Text,
   StyleSheet,
+  TouchableOpacity,
   KeyboardAvoidingView,
   Platform,
   ScrollView,
-  TouchableOpacity,
+  SafeAreaView,
 } from "react-native";
+import { Text, Button, Icon, Divider } from "@rneui/themed";
 import { useAuth } from "../../contexts/AuthContext";
 import CupertinoTextInput from "../../components/CupertinoTextInput";
-import CupertinoButton from "../../components/CupertinoButton";
-import {
-  Colors,
-  TextStyles,
-  ComponentStyles,
-} from "../../components/CupertinoStyles";
+import { Colors, TextStyles } from "../../components/CupertinoStyles";
 
 export default function LoginScreen({ navigation }) {
-  const { login } = useAuth();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState("");
-
-  const validateForm = () => {
-    if (!email || !password) {
-      setError("Email and password are required");
-      return false;
-    }
-
-    // Simple email validation
-    const emailRegex = /\S+@\S+\.\S+/;
-    if (!emailRegex.test(email)) {
-      setError("Please enter a valid email address");
-      return false;
-    }
-
-    return true;
-  };
+  const [error, setError] = useState(null);
+  const { login } = useAuth();
 
   const handleLogin = async () => {
-    setError("");
-
-    if (!validateForm()) {
+    if (!email || !password) {
+      setError("Please fill in all fields");
       return;
     }
-
     setLoading(true);
-    try {
-      const result = await login(email, password);
+    setError(null);
 
-      if (!result.success) {
-        setError(result.message);
-      }
+    try {
+      await login(email, password);
     } catch (err) {
-      setError("An unexpected error occurred. Please try again.");
-      console.error("Login error:", err);
+      setError(err.message || "Failed to login");
     } finally {
       setLoading(false);
     }
   };
 
+  const handleSocialLogin = (provider) => {
+    // TODO: Implement social login
+    console.log(`Login with ${provider}`);
+  };
+
   return (
-    <KeyboardAvoidingView
-      behavior={Platform.OS === "ios" ? "padding" : "height"}
-      style={styles.container}>
-      <ScrollView
-        contentContainerStyle={styles.scrollContent}
-        keyboardShouldPersistTaps="handled">
-        <View style={styles.headerContainer}>
-          <Text style={styles.title}>Welcome Back</Text>
-          <Text style={styles.subtitle}>
-            Sign in to continue to Split Share
-          </Text>
-        </View>
-
-        {error ? (
-          <View style={styles.errorContainer}>
-            <Text style={styles.errorText}>{error}</Text>
+    <SafeAreaView style={styles.container}>
+      <KeyboardAvoidingView
+        behavior={Platform.OS === "ios" ? "padding" : "height"}
+        style={styles.container}>
+        <ScrollView
+          style={styles.scrollView}
+          contentContainerStyle={styles.scrollContent}
+          keyboardShouldPersistTaps="handled">
+          <View style={styles.header}>
+            <Icon
+              name="receipt"
+              size={40}
+              color={Colors.primary}
+              style={styles.logo}
+            />
+            <Text h3 style={styles.title}>
+              Welcome Back
+            </Text>
+            <Text style={styles.subtitle}>
+              Sign in to continue managing your expenses
+            </Text>
           </View>
-        ) : null}
 
-        <View style={styles.formContainer}>
-          <CupertinoTextInput
-            label="Email"
-            value={email}
-            onChangeText={setEmail}
-            placeholder="Enter your email"
-            keyboardType="email-address"
-            autoCapitalize="none"
-          />
+          <View style={styles.form}>
+            <CupertinoTextInput
+              placeholder="Email"
+              value={email}
+              onChangeText={setEmail}
+              keyboardType="email-address"
+              autoCapitalize="none"
+              leftIcon={
+                <Icon
+                  name="email"
+                  type="material"
+                  size={24}
+                  color={Colors.gray}
+                />
+              }
+            />
 
-          <CupertinoTextInput
-            label="Password"
-            value={password}
-            onChangeText={setPassword}
-            placeholder="Enter your password"
-            secureTextEntry
-          />
+            <CupertinoTextInput
+              placeholder="Password"
+              value={password}
+              onChangeText={setPassword}
+              secureTextEntry={!showPassword}
+              rightIcon={
+                <TouchableOpacity
+                  onPress={() => setShowPassword(!showPassword)}>
+                  <Icon
+                    name={showPassword ? "visibility-off" : "visibility"}
+                    type="material"
+                    size={24}
+                    color={Colors.gray}
+                  />
+                </TouchableOpacity>
+              }
+            />
 
-          <CupertinoButton
-            title="Sign In"
-            onPress={handleLogin}
-            loading={loading}
-            style={styles.loginButton}
-          />
+            {error && <Text style={styles.errorText}>{error}</Text>}
 
-          <View style={styles.registerContainer}>
-            <Text style={styles.registerText}>Don't have an account? </Text>
-            <TouchableOpacity onPress={() => navigation.navigate("Register")}>
-              <Text style={styles.registerLink}>Sign Up</Text>
+            <Button
+              title="Sign In"
+              loading={loading}
+              containerStyle={styles.buttonContainer}
+              buttonStyle={styles.button}
+              onPress={handleLogin}
+            />
+
+            <View style={styles.dividerContainer}>
+              <Divider style={styles.divider} />
+              <Text style={styles.dividerText}>OR</Text>
+              <Divider style={styles.divider} />
+            </View>
+
+            <View style={styles.socialButtons}>
+              <Button
+                title="Google"
+                icon={{
+                  name: "google",
+                  type: "font-awesome",
+                  size: 18,
+                  color: Colors.white,
+                }}
+                buttonStyle={[styles.socialButton, styles.googleButton]}
+                containerStyle={styles.socialButtonContainer}
+                onPress={() => handleSocialLogin("google")}
+              />
+
+              <Button
+                title="Facebook"
+                icon={{
+                  name: "facebook",
+                  type: "font-awesome",
+                  size: 18,
+                  color: Colors.white,
+                }}
+                buttonStyle={[styles.socialButton, styles.facebookButton]}
+                containerStyle={styles.socialButtonContainer}
+                onPress={() => handleSocialLogin("facebook")}
+              />
+            </View>
+          </View>
+
+          <View style={styles.footer}>
+            <TouchableOpacity
+              onPress={() => navigation.navigate("Register")}
+              style={styles.footerButton}>
+              <Text style={styles.footerText}>
+                Don't have an account?{" "}
+                <Text style={styles.footerLink}>Sign Up</Text>
+              </Text>
             </TouchableOpacity>
           </View>
-        </View>
-      </ScrollView>
-    </KeyboardAvoidingView>
+        </ScrollView>
+      </KeyboardAvoidingView>
+    </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: Colors.light,
+    backgroundColor: Colors.white,
+  },
+  scrollView: {
+    flex: 1,
   },
   scrollContent: {
     flexGrow: 1,
-    padding: 24,
+    padding: 20,
   },
-  headerContainer: {
-    marginTop: 40,
-    marginBottom: 40,
+  header: {
     alignItems: "center",
+    marginVertical: 30,
+  },
+  logo: {
+    marginBottom: 20,
   },
   title: {
     ...TextStyles.largeTitle,
-    color: Colors.dark,
-    marginBottom: 8,
+    marginBottom: 10,
+    textAlign: "center",
   },
   subtitle: {
-    ...TextStyles.body,
+    ...TextStyles.subhead,
     color: Colors.gray,
     textAlign: "center",
   },
-  formContainer: {
+  form: {
     marginTop: 20,
   },
-  loginButton: {
-    marginTop: 30,
+  buttonContainer: {
+    marginTop: 20,
   },
-  errorContainer: {
-    backgroundColor: Colors.danger + "20",
-    padding: 16,
-    borderRadius: 10,
-    marginBottom: 20,
+  button: {
+    borderRadius: 12,
+    paddingVertical: 12,
+  },
+  dividerContainer: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginVertical: 30,
+  },
+  divider: {
+    flex: 1,
+    backgroundColor: Colors.lightGray,
+  },
+  dividerText: {
+    ...TextStyles.footnote,
+    color: Colors.gray,
+    marginHorizontal: 10,
+  },
+  socialButtons: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+  },
+  socialButtonContainer: {
+    flex: 0.48,
+  },
+  socialButton: {
+    borderRadius: 12,
+    paddingVertical: 12,
+  },
+  googleButton: {
+    backgroundColor: "#DB4437",
+  },
+  facebookButton: {
+    backgroundColor: "#4267B2",
+  },
+  footer: {
+    marginTop: "auto",
+    paddingVertical: 20,
+  },
+  footerButton: {
+    alignItems: "center",
+  },
+  footerText: {
+    ...TextStyles.subhead,
+    color: Colors.gray,
+  },
+  footerLink: {
+    color: Colors.primary,
+    fontWeight: "600",
   },
   errorText: {
     color: Colors.danger,
-    ...TextStyles.subhead,
-  },
-  registerContainer: {
-    flexDirection: "row",
-    justifyContent: "center",
-    marginTop: 20,
-  },
-  registerText: {
-    ...TextStyles.body,
-    color: Colors.gray,
-  },
-  registerLink: {
-    ...TextStyles.body,
-    color: Colors.primary,
-    fontWeight: "600",
+    ...TextStyles.footnote,
+    marginTop: 8,
+    textAlign: "center",
   },
 });

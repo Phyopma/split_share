@@ -1,156 +1,147 @@
 import React from "react";
-import { View, StyleSheet, ScrollView, Share, Alert } from "react-native";
-import { Text, Card, ListItem, Button, Icon, Divider } from "@rneui/themed";
+import { View, StyleSheet, ScrollView, TouchableOpacity } from "react-native";
+import { Text, Icon, Card, ListItem, Divider } from "@rneui/themed";
+import {
+  Colors,
+  TextStyles,
+  LayoutStyles,
+} from "../components/CupertinoStyles";
 
 export default function ReceiptDetailScreen({ route, navigation }) {
   const { receipt } = route.params;
 
-  const shareReceipt = async () => {
-    try {
-      // Format receipt data for sharing
-      const items = receipt.items
-        .map(
-          (item) =>
-            `- ${item.name}: $${item.unitPrice.toFixed(2)} x ${
-              item.quantity
-            } = $${item.total.toFixed(2)}`
-        )
-        .join("\n");
+  const renderHeader = () => (
+    <Card containerStyle={styles.headerCard}>
+      <View style={styles.merchantInfo}>
+        <Icon
+          name="storefront"
+          type="material"
+          size={24}
+          color={Colors.primary}
+          containerStyle={styles.merchantIcon}
+        />
+        <View style={styles.merchantDetails}>
+          <Text style={styles.merchantName}>{receipt.merchantName}</Text>
+          <Text style={styles.receiptDate}>
+            {new Date(receipt.date).toLocaleDateString()}
+          </Text>
+        </View>
+      </View>
+      <View style={styles.groupInfo}>
+        <Icon
+          name="group"
+          type="material"
+          size={24}
+          color={Colors.gray}
+          containerStyle={styles.groupIcon}
+        />
+        <Text style={styles.groupName}>
+          {receipt.groupName || "Group Name"}
+        </Text>
+      </View>
+    </Card>
+  );
 
-      const shareMessage =
-        `Receipt from ${receipt.merchantName}\n` +
-        `Date: ${new Date(receipt.date).toLocaleDateString()}\n\n` +
-        `Items:\n${items}\n\n` +
-        `Subtotal: $${receipt.subtotal.toFixed(2)}\n` +
-        `Tax: $${receipt.tax.toFixed(2)}\n` +
-        (receipt.tip ? `Tip: $${receipt.tip.toFixed(2)}\n` : "") +
-        `Total: $${receipt.total.toFixed(2)}`;
+  const renderItems = () => (
+    <Card containerStyle={styles.itemsCard}>
+      <Card.Title style={styles.sectionTitle}>Items</Card.Title>
+      {receipt.items.map((item, index) => (
+        <View key={index}>
+          {index > 0 && <Divider style={styles.itemDivider} />}
+          <ListItem containerStyle={styles.itemContainer}>
+            <ListItem.Content>
+              <ListItem.Title style={styles.itemName}>
+                {item.name}
+              </ListItem.Title>
+              <View style={styles.itemDetails}>
+                <Text style={styles.itemQuantity}>
+                  {item.quantity} × ${item.unitPrice.toFixed(2)}
+                </Text>
+                <Text style={styles.itemTotal}>
+                  ${(item.quantity * item.unitPrice).toFixed(2)}
+                </Text>
+              </View>
+            </ListItem.Content>
+          </ListItem>
+        </View>
+      ))}
+    </Card>
+  );
 
-      await Share.share({
-        message: shareMessage,
-        title: `Receipt from ${receipt.merchantName}`,
-      });
-    } catch (error) {
-      Alert.alert("Error", "Failed to share receipt");
-      console.error("Share error:", error);
-    }
-  };
+  const renderTotals = () => (
+    <Card containerStyle={styles.totalsCard}>
+      <View style={styles.totalRow}>
+        <Text style={styles.totalLabel}>Subtotal</Text>
+        <Text style={styles.totalValue}>${receipt.subtotal.toFixed(2)}</Text>
+      </View>
+      {receipt.tax > 0 && (
+        <View style={styles.totalRow}>
+          <Text style={styles.totalLabel}>Tax</Text>
+          <Text style={styles.totalValue}>${receipt.tax.toFixed(2)}</Text>
+        </View>
+      )}
+      {receipt.tip > 0 && (
+        <View style={styles.totalRow}>
+          <Text style={styles.totalLabel}>Tip</Text>
+          <Text style={styles.totalValue}>${receipt.tip.toFixed(2)}</Text>
+        </View>
+      )}
+      <Divider style={styles.totalsDivider} />
+      <View style={styles.totalRow}>
+        <Text style={styles.finalTotalLabel}>Total</Text>
+        <Text style={styles.finalTotalValue}>${receipt.total.toFixed(2)}</Text>
+      </View>
+    </Card>
+  );
 
-  const editReceipt = () => {
-    // Navigate to ReceiptConfirmation with editing mode enabled and the existing receipt
-    navigation.navigate("ReceiptConfirmation", {
-      receipt,
-      isEditing: true,
-    });
-  };
-
-  const splitBill = () => {
-    // This will be implemented in future updates
-    Alert.alert(
-      "Coming Soon",
-      "Bill splitting functionality will be available in the next update!",
-      [{ text: "OK" }]
-    );
-  };
+  const renderSplits = () => (
+    <Card containerStyle={styles.splitsCard}>
+      <Card.Title style={styles.sectionTitle}>Split Details</Card.Title>
+      {receipt.splits?.map((split, index) => (
+        <ListItem key={index} containerStyle={styles.splitContainer}>
+          <View style={styles.memberAvatar}>
+            <Text style={styles.memberInitials}>
+              {split.memberName
+                .split(" ")
+                .map((n) => n[0])
+                .join("")
+                .toUpperCase()}
+            </Text>
+          </View>
+          <ListItem.Content>
+            <ListItem.Title style={styles.memberName}>
+              {split.memberName}
+            </ListItem.Title>
+            <ListItem.Subtitle style={styles.splitAmount}>
+              ${split.amount.toFixed(2)} ({split.percentage.toFixed(1)}%)
+            </ListItem.Subtitle>
+          </ListItem.Content>
+          <View style={styles.splitStatus}>
+            <Icon
+              name={split.settled ? "check-circle" : "schedule"}
+              type="material"
+              size={20}
+              color={split.settled ? Colors.success : Colors.warning}
+            />
+            <Text
+              style={[
+                styles.statusText,
+                { color: split.settled ? Colors.success : Colors.warning },
+              ]}>
+              {split.settled ? "Settled" : "Pending"}
+            </Text>
+          </View>
+        </ListItem>
+      ))}
+    </Card>
+  );
 
   return (
     <ScrollView style={styles.container}>
-      <Card containerStyle={styles.card}>
-        <Card.Title style={styles.title}>{receipt.merchantName}</Card.Title>
-        <Text style={styles.date}>
-          {new Date(receipt.date).toLocaleDateString()}
-        </Text>
-
-        <Divider style={styles.divider} />
-
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Items</Text>
-          {receipt.items.map((item, index) => (
-            <ListItem
-              key={index}
-              bottomDivider
-              containerStyle={styles.listItem}>
-              <ListItem.Content>
-                <ListItem.Title style={styles.itemName}>
-                  {item.name}
-                </ListItem.Title>
-                <View style={styles.itemDetails}>
-                  <Text style={styles.itemInfo}>Qty: {item.quantity}</Text>
-                  <Text style={styles.itemInfo}>
-                    ${item.unitPrice.toFixed(2)}
-                  </Text>
-                  <Text style={styles.itemTotal}>${item.total.toFixed(2)}</Text>
-                </View>
-              </ListItem.Content>
-            </ListItem>
-          ))}
-        </View>
-
-        <Divider style={styles.divider} />
-
-        <View style={styles.totals}>
-          <View style={styles.totalRow}>
-            <Text>Subtotal</Text>
-            <Text>${receipt.subtotal.toFixed(2)}</Text>
-          </View>
-          <View style={styles.totalRow}>
-            <Text>Tax</Text>
-            <Text>${receipt.tax.toFixed(2)}</Text>
-          </View>
-          {receipt.tip !== null && receipt.tip !== undefined && (
-            <View style={styles.totalRow}>
-              <Text>Tip</Text>
-              <Text>${receipt.tip.toFixed(2)}</Text>
-            </View>
-          )}
-          <View style={styles.totalRow}>
-            <Text style={styles.totalText}>Total</Text>
-            <Text style={styles.totalAmount}>${receipt.total.toFixed(2)}</Text>
-          </View>
-        </View>
-
-        <View style={styles.buttonContainer}>
-          <Button
-            title="Edit"
-            icon={
-              <Icon
-                name="edit"
-                color="white"
-                size={16}
-                style={styles.buttonIcon}
-              />
-            }
-            buttonStyle={[styles.actionButton, styles.editButton]}
-            onPress={editReceipt}
-          />
-          <Button
-            title="Share"
-            icon={
-              <Icon
-                name="share"
-                color="white"
-                size={16}
-                style={styles.buttonIcon}
-              />
-            }
-            buttonStyle={[styles.actionButton, styles.shareButton]}
-            onPress={shareReceipt}
-          />
-          <Button
-            title="Split Bill"
-            icon={
-              <Icon
-                name="group"
-                color="white"
-                size={16}
-                style={styles.buttonIcon}
-              />
-            }
-            buttonStyle={[styles.actionButton, styles.splitButton]}
-            onPress={splitBill}
-          />
-        </View>
-      </Card>
+      {renderHeader()}
+      {renderItems()}
+      {renderTotals()}
+      {renderSplits()}
     </ScrollView>
   );
 }
@@ -158,92 +149,145 @@ export default function ReceiptDetailScreen({ route, navigation }) {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: "#f5f5f5",
+    backgroundColor: Colors.light,
   },
-  card: {
-    borderRadius: 10,
-    padding: 15,
-    margin: 10,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 2,
+  headerCard: {
+    ...LayoutStyles.card,
+    marginHorizontal: 16,
+    marginTop: 16,
   },
-  title: {
-    fontSize: 20,
+  merchantInfo: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginBottom: 12,
   },
-  date: {
-    textAlign: "center",
-    color: "#666",
-    marginBottom: 15,
+  merchantIcon: {
+    backgroundColor: Colors.primary + "10",
+    padding: 8,
+    borderRadius: 8,
   },
-  divider: {
-    marginVertical: 15,
-    backgroundColor: "#e0e0e0",
+  merchantDetails: {
+    marginLeft: 12,
+    flex: 1,
   },
-  section: {
-    marginVertical: 15,
+  merchantName: {
+    ...TextStyles.headline,
+    marginBottom: 4,
+  },
+  receiptDate: {
+    ...TextStyles.footnote,
+    color: Colors.gray,
+  },
+  groupInfo: {
+    flexDirection: "row",
+    alignItems: "center",
+  },
+  groupIcon: {
+    backgroundColor: Colors.lightGray,
+    padding: 8,
+    borderRadius: 8,
+  },
+  groupName: {
+    ...TextStyles.subhead,
+    marginLeft: 12,
+    color: Colors.gray,
+  },
+  itemsCard: {
+    ...LayoutStyles.card,
+    marginHorizontal: 16,
   },
   sectionTitle: {
-    fontSize: 18,
-    fontWeight: "bold",
-    marginBottom: 10,
+    ...TextStyles.headline,
+    textAlign: "left",
+    marginBottom: 8,
   },
-  listItem: {
-    paddingVertical: 12,
-    backgroundColor: "#fafafa",
+  itemContainer: {
+    paddingVertical: 8,
+    paddingHorizontal: 0,
+    backgroundColor: "transparent",
+  },
+  itemDivider: {
+    backgroundColor: Colors.lightGray,
   },
   itemName: {
-    fontWeight: "500",
+    ...TextStyles.body,
+    marginBottom: 4,
   },
   itemDetails: {
     flexDirection: "row",
     justifyContent: "space-between",
-    marginTop: 5,
   },
-  itemInfo: {
-    color: "#666",
+  itemQuantity: {
+    ...TextStyles.footnote,
+    color: Colors.gray,
   },
   itemTotal: {
-    fontWeight: "bold",
+    ...TextStyles.subhead,
+    color: Colors.black,
   },
-  totals: {
-    marginTop: 20,
+  totalsCard: {
+    ...LayoutStyles.card,
+    marginHorizontal: 16,
   },
   totalRow: {
     flexDirection: "row",
     justifyContent: "space-between",
-    paddingVertical: 5,
+    alignItems: "center",
+    paddingVertical: 4,
   },
-  totalText: {
-    fontSize: 18,
-    fontWeight: "bold",
+  totalLabel: {
+    ...TextStyles.body,
+    color: Colors.gray,
   },
-  totalAmount: {
-    fontSize: 18,
-    fontWeight: "bold",
-    color: "#2089dc",
+  totalValue: {
+    ...TextStyles.body,
   },
-  buttonContainer: {
+  totalsDivider: {
+    marginVertical: 8,
+    backgroundColor: Colors.lightGray,
+  },
+  finalTotalLabel: {
+    ...TextStyles.headline,
+  },
+  finalTotalValue: {
+    ...TextStyles.headline,
+    color: Colors.primary,
+  },
+  splitsCard: {
+    ...LayoutStyles.card,
+    marginHorizontal: 16,
+    marginBottom: 24,
+  },
+  splitContainer: {
+    paddingVertical: 12,
+    backgroundColor: "transparent",
+  },
+  memberAvatar: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: Colors.primary,
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  memberInitials: {
+    ...TextStyles.headline,
+    color: Colors.white,
+  },
+  memberName: {
+    ...TextStyles.body,
+    marginBottom: 4,
+  },
+  splitAmount: {
+    ...TextStyles.footnote,
+    color: Colors.gray,
+  },
+  splitStatus: {
     flexDirection: "row",
-    justifyContent: "space-between",
-    marginTop: 20,
+    alignItems: "center",
   },
-  actionButton: {
-    paddingHorizontal: 20,
-    borderRadius: 8,
-  },
-  buttonIcon: {
-    marginRight: 5,
-  },
-  editButton: {
-    backgroundColor: "#3498db",
-  },
-  shareButton: {
-    backgroundColor: "#2ecc71",
-  },
-  splitButton: {
-    backgroundColor: "#9b59b6",
+  statusText: {
+    ...TextStyles.caption2,
+    marginLeft: 4,
   },
 });
